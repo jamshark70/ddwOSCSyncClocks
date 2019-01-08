@@ -1,0 +1,6 @@
+(
+	name:		"ddwOSCSyncClocks",
+	summary:	"Simple, minimalistic master-slave clock sync across the network",
+	author:		"James Harkins",
+	version:		0.1
+)

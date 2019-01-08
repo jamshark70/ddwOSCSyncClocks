@@ -1,0 +1,108 @@
+TITLE:: DDWMasterClock
+summary:: A master timing source for SuperCollider instances to be synchronized across a network
+categories:: Scheduling
+related:: Classes/DDWSlaveClock, Classes/TempoClock
+
+DESCRIPTION::
+
+With link::Classes/DDWSlaveClock::, a minimalistic master-slave approach to synchronizing multiple SuperCollider language instances over a local network.
+
+The local network should allow broadcast messages (IP address code::"255.255.255.255"::). If your system has a firewall, make sure SuperCollider's ports (57120, 57110) are open for UDP traffic.
+
+Currently the master clock sends only to sclang's default port, 57120. You may override link::Classes/DDWMasterClock#-addr:: to change this behavior.
+
+Both DDWMasterClock and link::Classes/DDWSlaveClock:: inherit from TempoClock. After creating the clocks, their operation is identical to that of TempoClock. Basic TempoClock features are not documented here; consult the link::Classes/TempoClock:: help file for details.
+
+Subsection:: Usage
+
+Normal usage is:
+
+list::
+## One master clock, providing a global tempo for the entire network.
+## Any number of slave clocks, on other machines.
+::
+
+For this use case, the procedure is: 1. Create the master clock. 2. On the other machines, create one slave clock instance per machine. The slaves should automatically detect sync messages coming from the master, and synchronize beats and tempo within a second or two.
+
+It is also possible to run multiple master clocks, at different tempi. Each master clock should have a different ID. (If you don't provide one, an ID will be chosen from link::Classes/UniqueID::, but if you need multiple tempi, it is highly recommended to specify an ID as a number or link::Classes/Symbol::.) Then, slave clocks can be created for specific IDs. (Note: This scenario is not extensively tested yet.)
+
+CLASSMETHODS::
+
+METHOD:: new
+Create a master clock instance. It will begin broadcasting immediately.
+
+ARGUMENT:: tempo
+As in TempoClock, the tempo in beats per second.
+
+ARGUMENT:: beats
+As in TempoClock, the beat count to initialize the clock. Optional.
+
+ARGUMENT:: seconds
+As in TempoClock, the seconds count to initialize the clock. Optional.
+
+ARGUMENT:: queueSize
+As in TempoClock, the size of the scheduler array.
+
+ARGUMENT:: id
+A number or symbol identifying this master clock to other machines. If you only need one master, this is optional; an ID will be chosen for you, and slave clocks will pick up the first ID they receive.
+
+returns:: The new clock instance.
+
+
+INSTANCEMETHODS::
+
+METHOD:: id
+The clock's ID.
+
+METHOD:: latency
+The latency value used for sync messages. Normally you should not need to change this.
+
+returns:: A numeric latency value.
+
+METHOD:: addr
+The link::Classes/NetAddr:: to which sync messages are sent. If you choose to change it, please use the broadcast IP address code::"255.255.255.255"::. By default, code::addr:: is code::NetAddr("255.255.255.255", 57120)::. You may override this, for example, with NMLNetAddrMP from the Utopia quark to broadcast sync messages to multiple ports.
+
+returns:: A NetAddr.
+
+
+PRIVATE:: freePingResponder, prSendSync, stopAliveThread, makePingResponder, doOnShutDown, startAliveThread, stop, setTempoAtBeat, init
+
+
+EXAMPLES::
+
+You can run all of this example on one machine in one sclang instance, or run the sections on different machines as indicated.
+
+code::
+// ****
+// On the master machine:
+t = DDWMasterClock(2);
+
+(
+p = Pbind(
+	\degree, Pwhite(0, 5, inf) - 7,
+	\dur, 1
+).play(t, quant: -1);
+)
+
+p.stop;  // when finished
+t.stop;  // this "releases" the slave to run on its own time
+
+
+// ****
+// On the slave machine (also works on the master machine)
+u = DDWSlaveClock.new;
+
+(
+q = Pbind(
+	\degree, Pwhite(0, 5, inf),
+	\dur, 0.5
+).play(u, quant: -1);
+)
+
+q.stop;  // when finished
+u.stop;
+::
+
+Subsection:: Acknowledgment
+
+Credit is due to Scott Wilson, for one critical idea borrowed from his BeaconClock class (in the Utopia quark). A possible issue with clock sync is processor contention: integer beats tend to be busy. BeaconClock and DDWMasterClock both broadcast sync messages at randomized intervals, so that sync messages will almost certainly be sent "in between" musical events, avoiding messaging delays.

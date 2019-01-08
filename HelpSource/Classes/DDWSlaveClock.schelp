@@ -1,0 +1,125 @@
+TITLE:: DDWSlaveClock
+summary:: A slave clock for SuperCollider instances to be synchronized across a network
+categories:: Scheduling
+related:: Classes/DDWMasterClock, Classes/TempoClock
+
+DESCRIPTION::
+
+With link::Classes/DDWMasterClock::, a minimalistic master-slave approach to synchronizing multiple SuperCollider language instances over a local network.
+
+The local network should allow broadcast messages (IP address code::"255.255.255.255"::). If your system has a firewall, make sure SuperCollider's ports (57120, 57110) are open for UDP traffic.
+
+Both DDWSlaveClock and link::Classes/DDWMasterClock:: inherit from TempoClock. After creating the clocks, their operation is identical to that of TempoClock. Basic TempoClock features are not documented here; consult the link::Classes/TempoClock:: help file for details.
+
+NOTE:: For obvious reasons, you should not try to change a slave clock's tempo or beats. By design, these are synchronized to the master. ::
+
+Subsection:: Usage
+
+Normal usage is:
+
+list::
+## One master clock, providing a global tempo for the entire network.
+## Any number of slave clocks, on other machines.
+::
+
+For this use case, the procedure is: 1. Create the master clock. 2. On the other machines, create one slave clock instance per machine. The slaves should automatically detect sync messages coming from the master, and synchronize beats and tempo within a second or two.
+
+It is also possible to run multiple master clocks, at different tempi. Each master clock should have a different ID. (If you don't provide one, an ID will be chosen from link::Classes/UniqueID::, but if you need multiple tempi, it is highly recommended to specify an ID as a number or link::Classes/Symbol::.) Then, slave clocks can be created for specific IDs. (Note: This scenario is not extensively tested yet.)
+
+CLASSMETHODS::
+
+METHOD:: new
+Create a slave clock instance.
+
+ARGUMENT:: tempo
+Retained for interface compatibility with TempoClock. Once this clock syncs to a master, any tempo you provide here will be ignored.
+
+ARGUMENT:: beats
+Retained for interface compatibility with TempoClock.
+
+ARGUMENT:: seconds
+Retained for interface compatibility with TempoClock.
+
+ARGUMENT:: queueSize
+As in TempoClock, the size of the scheduler array.
+
+ARGUMENT:: id
+The ID of the master clock to which to synchronize. Optional: If you don't provide one, this clock will respond to the first sync message it receives, and use the ID in that message.
+
+returns:: The new clock instance.
+
+
+INSTANCEMETHODS::
+
+METHOD:: id
+The clock's ID.
+
+METHOD:: latency
+The latency value in the sync messages coming from the master.
+
+returns:: A numeric latency value.
+
+METHOD:: diff
+Accounts for the difference between the master machine's system clock and the local machine's clock. (You cannot assume code::SystemClock.seconds:: will be the same across multiple machines.) Accessible for debugging purposes only; this information is not useful for scheduling.
+
+returns:: A number.
+
+METHOD:: netDelay
+An estimate of the time it takes for the sync messages to travel from the master to the local machine. Accessible for debugging purposes only; this information is not useful for scheduling.
+
+returns:: A number.
+
+METHOD:: addr
+The link::Classes/NetAddr:: from which sync messages are coming. You cannot change this.
+
+returns:: A NetAddr.
+
+METHOD:: ping
+Called automatically during initialization, this method repeatedly sends messages to the master machine and waits for a reply. The average round-trip time is then divided by two, for the one-way transmission time. Accessible for debugging purposes only; this information is not useful for scheduling.
+
+ARGUMENT:: n
+The number of times to ping the master.
+
+
+PRIVATE:: makeResponder, prSync, stop
+
+
+
+EXAMPLES::
+
+You can run all of this example on one machine in one sclang instance, or run the sections on different machines as indicated.
+
+code::
+// ****
+// On the master machine:
+t = DDWMasterClock(2);
+
+(
+p = Pbind(
+	\degree, Pwhite(0, 5, inf) - 7,
+	\dur, 1
+).play(t, quant: -1);
+)
+
+p.stop;  // when finished
+t.stop;  // this "releases" the slave to run on its own time
+
+
+// ****
+// On the slave machine (also works on the master machine)
+u = DDWSlaveClock.new;
+
+(
+q = Pbind(
+	\degree, Pwhite(0, 5, inf),
+	\dur, 0.5
+).play(u, quant: -1);
+)
+
+q.stop;  // when finished
+u.stop;
+::
+
+Subsection:: Acknowledgment
+
+Credit is due to Scott Wilson, for one critical idea borrowed from his BeaconClock class (in the Utopia quark). A possible issue with clock sync is processor contention: integer beats tend to be busy. BeaconClock and DDWMasterClock both broadcast sync messages at randomized intervals, so that sync messages will almost certainly be sent "in between" musical events, avoiding messaging delays.
