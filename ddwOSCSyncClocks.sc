@@ -157,7 +157,9 @@ DDWSlaveClock : TempoClock {
 
 	// ['/ddwClock', id, this.beats, latency, this.tempo]
 	prSync { |msg, time|
-		// diff = (their time - my time); also, 'time' already includes latency
+		// diff = (my time - their time);
+		// 'time' is their time so it's their time + my time - their time --> my time
+		// also, 'time' already includes latency so don't add/subtract it here
 		SystemClock.schedAbs(time + diff - netDelay, {
 			// but msg[2] 'beats' does *not* account for latency; scale to tempo
 			latency = msg[3];
