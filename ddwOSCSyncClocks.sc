@@ -38,6 +38,7 @@ DDWMasterClock : TempoClock {
 	stop {
 		this.stopAliveThread;
 		addr.sendMsg('/ddwMasterStopped', id);
+		ShutDown.remove(this);
 		super.stop;
 	}
 	doOnShutDown { this.stop }  // clean up and especially notify clients
