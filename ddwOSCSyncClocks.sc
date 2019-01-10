@@ -96,6 +96,7 @@ DDWMasterClock : TempoClock {
 DDWSlaveClock : TempoClock {
 	var <latency, <netDelay, <diff, <addr, <>id;
 	var clockResp, meterResp, stopResp;
+	var recalibrate = false;
 
 	// tempo, beats, seconds retained for compatibility, but they are overwritten
 	*new { |tempo, beats, seconds, queueSize = 256, id|
@@ -149,7 +150,7 @@ DDWSlaveClock : TempoClock {
 				this.makeResponder(msg[1]);
 			}, '/ddwClock');
 		}
-		{ diff.isNil } {
+		{ recalibrate or: { diff.isNil } } {
 			array = Array(medianSize);
 			clockResp = OSCFunc({ |msg, time, argAddr|
 				var i;
@@ -171,6 +172,7 @@ DDWSlaveClock : TempoClock {
 					this.ping;
 				};
 				if(array.size == medianSize) {
+					recalibrate = false;
 					this.makeResponder(id);  // clear this phase
 				};
 			}, '/ddwClock', argTemplate: argTemplate);
@@ -179,6 +181,16 @@ DDWSlaveClock : TempoClock {
 		{
 			clockResp = OSCFunc({ |msg, time|
 				this.prSync(msg, time);
+				value = (SystemClock.seconds - time) + msg[3];
+				// the system clock on the master machine might not run at the same speed
+				// if that's the case, eventually the measured time difference will drift
+				// too far away from 'diff'. If that happens, we need to recalibrate.
+				// But, don't recalibrate too often or the timebase will be unstable.
+				// A few ms drift are acceptable, not more than that.
+				if((value absdif: diff) > 0.007) {
+					recalibrate = true;
+					this.makeResponder(id);
+				};
 			}, '/ddwClock', argTemplate: argTemplate);
 		}
 	}
