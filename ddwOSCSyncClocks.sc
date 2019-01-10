@@ -117,6 +117,16 @@ DDWSlaveClock : TempoClock {
 		super.stop;
 	}
 
+	tempo_ {
+		Error("DDWSlaveClock cannot set tempo directly (id = %)".format(id)).throw;
+	}
+	beatsPerBar_ {
+		Error("DDWSlaveClock cannot set beatsPerBar directly (id = %)".format(id)).throw;
+	}
+	beats_ {
+		Error("DDWSlaveClock cannot set beats directly (id = %)".format(id)).throw;
+	}
+
 	makeResponder { |argId|
 		var argTemplate, calibrateCount, sum;
 		id = argId;
@@ -175,9 +185,11 @@ DDWSlaveClock : TempoClock {
 		SystemClock.schedAbs(time + diff - netDelay, {
 			// but msg[2] 'beats' does *not* account for latency; scale to tempo
 			latency = msg[3];
-			this.tempo_(msg[4]).beats_(msg[2] + (latency * msg[4]));
+			this.prTempo_(msg[4]).prBeats_(msg[2] + (latency * msg[4]));
 		});
 	}
+	prTempo_ { |newTempo| ^super.tempo = newTempo }
+	prBeats_ { |newBeats| ^super.beats = newBeats }
 
 	// need a timeout for this in case it fails
 	ping { |n(20)|

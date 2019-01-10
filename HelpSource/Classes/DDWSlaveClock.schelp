@@ -81,7 +81,7 @@ ARGUMENT:: n
 The number of times to ping the master.
 
 
-PRIVATE:: makeResponder, prSync, stop
+PRIVATE:: makeResponder, prSync, stop, prTempo, prBeats, beats, beatsPerBar, tempo
 
 
 
