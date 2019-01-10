@@ -43,9 +43,14 @@ DDWMasterClock : TempoClock {
 	}
 	doOnShutDown { this.stop }  // clean up and especially notify clients
 
+	// TempoClock compatibility
 	setTempoAtBeat { arg newTempo, beats;
 		super.setTempoAtBeat(newTempo, beats);
 		this.prSendSync;
+	}
+	setMeterAtBeat { arg newBeatsPerBar, beats;
+		super.setMeterAtBeat(newBeatsPerBar, beats);
+		addr.sendMsg('/ddwClockMeter', id, newBeatsPerBar, beats);
 	}
 
 	prSendSync {
@@ -90,7 +95,7 @@ DDWMasterClock : TempoClock {
 
 DDWSlaveClock : TempoClock {
 	var <latency, <netDelay, <diff, <addr, <>id;
-	var clockResp, stopResp;
+	var clockResp, meterResp, stopResp;
 
 	// tempo, beats, seconds retained for compatibility, but they are overwritten
 	*new { |tempo, beats, seconds, queueSize = 256, id|
@@ -107,7 +112,8 @@ DDWSlaveClock : TempoClock {
 	stop {
 		stopResp.free;
 		clockResp.free;
-		stopResp = clockResp = nil;
+		meterResp.free;
+		stopResp = meterResp = clockResp = nil;
 	}
 
 	makeResponder { |argId|
@@ -118,6 +124,10 @@ DDWSlaveClock : TempoClock {
 		stopResp = OSCFunc({ |msg|
 			"Master clock ID % stopped. DDWSlaveClock is now free-running.".format(id).warn;
 		}, '/ddwMasterStopped', argTemplate: argTemplate);
+		meterResp.free;
+		meterResp = OSCFunc({ |msg|
+			this.setMeterAtBeat(msg[2], msg[3]);
+		}, '/ddwClockMeter', argTemplate: argTemplate);
 		clockResp.free;
 		case
 		// default setup: one master, slave doesn't specify ID
