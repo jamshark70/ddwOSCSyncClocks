@@ -128,7 +128,8 @@ DDWSlaveClock : TempoClock {
 	}
 
 	makeResponder { |argId|
-		var argTemplate, calibrateCount, sum;
+		var medianSize = 15;  // should be odd
+		var argTemplate, array, value;
 		id = argId;
 		argTemplate = if(id.notNil) { [id] } { nil };
 		stopResp.free;
@@ -149,21 +150,27 @@ DDWSlaveClock : TempoClock {
 			}, '/ddwClock');
 		}
 		{ diff.isNil } {
-			calibrateCount = 0;
-			sum = 0;
+			array = Array(medianSize);
 			clockResp = OSCFunc({ |msg, time, argAddr|
+				var i;
 				// difference = (sysclock + latency) - (time already includes latency)
-				sum = sum + (SystemClock.seconds - time) + msg[3];
-				calibrateCount = calibrateCount + 1;
-				diff = sum / calibrateCount;
-				[time, SystemClock.seconds, sum, diff, calibrateCount].debug("calibrating");
+				value = (SystemClock.seconds - time) + msg[3];
+				// add item in order, to get a median
+				i = array.detectIndex { |item| item > value };
+				if(i.isNil) {
+					array.add(value);
+				} {
+					array.insert(i, value);
+				};
+				diff = array.blendAt((array.size - 1) * 0.5);
+				[time, SystemClock.seconds, value, diff, array.size].debug("calibrating");
 				if(netDelay.notNil) {
 					this.prSync(msg, time);
 				} {
 					addr = argAddr;
 					this.ping;
 				};
-				if(calibrateCount >= 10) {
+				if(array.size == medianSize) {
 					this.makeResponder(id);  // clear this phase
 				};
 			}, '/ddwClock', argTemplate: argTemplate);
