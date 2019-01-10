@@ -114,6 +114,7 @@ DDWSlaveClock : TempoClock {
 		clockResp.free;
 		meterResp.free;
 		stopResp = meterResp = clockResp = nil;
+		super.stop;
 	}
 
 	makeResponder { |argId|
