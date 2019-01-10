@@ -153,10 +153,9 @@ DDWSlaveClock : TempoClock {
 			sum = 0;
 			clockResp = OSCFunc({ |msg, time, argAddr|
 				// difference = (sysclock + latency) - (time already includes latency)
-				// but we want to subtract this later, so '.neg' it below
 				sum = sum + (SystemClock.seconds - time) + msg[3];
 				calibrateCount = calibrateCount + 1;
-				diff = sum.neg / calibrateCount;
+				diff = sum / calibrateCount;
 				[time, SystemClock.seconds, sum, diff, calibrateCount].debug("calibrating");
 				if(netDelay.notNil) {
 					this.prSync(msg, time);
