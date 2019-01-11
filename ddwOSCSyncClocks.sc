@@ -58,7 +58,7 @@ DDWMasterClock : TempoClock {
 		// 'this.beats' now, but 'latency' timestamps for future
 		// slave's responsibility to calculate the later beats value
 		// that may be a mistake
-		addr.sendBundle(latency, ['/ddwClock', id, this.beats, latency, this.tempo, SystemClock.seconds]);
+		addr.sendBundle(latency, ['/ddwClock', id, this.beats, latency, this.tempo, SystemClock.seconds, SystemClock.seconds]);
 	}
 
 	startAliveThread {
@@ -96,20 +96,23 @@ DDWMasterClock : TempoClock {
 }
 
 UnstableMasterClock : DDWMasterClock {
-	var <>instability = 0.025;
+	var <>instability = 0.065;
 	prSendSync {
-		// 'this.beats' now, but 'latency' timestamps for future
-		// slave's responsibility to calculate the later beats value
-		// that may be a mistake
+		// for testing: send one time value with a random offset,
+		// simulating network jitter
+		// We also send SystemClock.seconds to simulate the timestamp+latency (which is stable)
 		addr.sendBundle(latency, ['/ddwClock', id, this.beats, latency, this.tempo,
-			SystemClock.seconds + instability.rand2]);
+			SystemClock.seconds + instability.rand2, SystemClock.seconds]);
 	}
 }
 
 DDWSlaveClock : TempoClock {
 	var <latency, <netDelay, <diff, <addr, <>id;
-	var array, indexArray, <medianSize = 7, <>useMedian = true;
 	var clockResp, meterResp, stopResp;
+	// Kalman variables
+	var guess, uncertainty, kGain,
+	<>clockDriftFactor = 0.00001,  // "process noise" in Kalman literature
+	<>measurementError = 0.003;  // "measurement uncertainty"
 	var recalibrate = false;
 
 	// tempo, beats, seconds retained for compatibility, but they are overwritten
@@ -143,7 +146,6 @@ DDWSlaveClock : TempoClock {
 	}
 
 	makeResponder { |argId|
-		// var medianSize = 15;  // should be odd
 		var argTemplate, value;
 		id = argId;
 		argTemplate = if(id.notNil) { [id] } { nil };
@@ -164,61 +166,22 @@ DDWSlaveClock : TempoClock {
 				this.makeResponder(msg[1]);
 			}, '/ddwClock');
 		}
-		{ recalibrate or: { diff.isNil } } {
-			array = Array(medianSize);
-			indexArray = Array(medianSize);
+		{
+			diff = 1;
+			uncertainty = 10000;  // no confidence in first 'diff' guess
 			clockResp = OSCFunc({ |msg, time, argAddr|
-				var i;
 				// difference = (sysclock + latency) - (time already includes latency)
-				// msg.debug("incoming");
 				value = (SystemClock.seconds - msg[5] /*time*/) /*+ msg[3]*/;
-				// add item in order, to get a moving median
-				// if full, remove the oldest
-				if(array.size == medianSize) {
-					i = indexArray.minIndex;
-					array.removeAt(i);
-					indexArray.removeAt(i);
-					indexArray = indexArray - 1;
-				};
-				i = array.detectIndex { |item| item > value };
-				if(i.isNil) {
-					array = array.add(value);
-					indexArray = indexArray.add(array.size);
-				} {
-					array = array.insert(i, value);
-					indexArray = indexArray.insert(i, array.size);
-				};
-				if(useMedian) {
-					diff = array.blendAt((array.size - 1) * 0.5);
-				} {
-					diff = array.mean;
-				};
-				[time, SystemClock.seconds, value, diff, array.size].debug("calibrating");
+				uncertainty = uncertainty + clockDriftFactor;
+				kGain = uncertainty / (uncertainty + measurementError);
+				diff = diff + (kGain * (value - diff));  // "estimate current state"
+				uncertainty = (1 - kGain) * uncertainty;
+				[msg[5], msg[6], SystemClock.seconds, value, diff/*, array.size*/].debug("calibrating");
 				if(netDelay.notNil) {
 					this.prSync(msg, time);
 				} {
 					addr = argAddr;
 					this.ping;
-				};
-				// if(array.size == medianSize) {
-				// 	recalibrate = false;
-				// 	this.makeResponder(id);  // clear this phase
-				// };
-			}, '/ddwClock', argTemplate: argTemplate);
-		}
-		// all set up, normal clock responses
-		{
-			clockResp = OSCFunc({ |msg, time|
-				this.prSync(msg, time);
-				value = (SystemClock.seconds - time) + msg[3];
-				// the system clock on the master machine might not run at the same speed
-				// if that's the case, eventually the measured time difference will drift
-				// too far away from 'diff'. If that happens, we need to recalibrate.
-				// But, don't recalibrate too often or the timebase will be unstable.
-				// A few ms drift are acceptable, not more than that.
-				if((value absdif: diff) > 0.007) {
-					recalibrate = true;
-					this.makeResponder(id);
 				};
 			}, '/ddwClock', argTemplate: argTemplate);
 		}
@@ -229,7 +192,7 @@ DDWSlaveClock : TempoClock {
 		// diff = (my time - their time);
 		// 'time' is their time so it's their time + my time - their time --> my time
 		// also, 'time' already includes latency so don't add/subtract it here
-		SystemClock.schedAbs(msg[5]/*time*/ + diff - netDelay + msg[3], {
+		SystemClock.schedAbs(msg[6]/*time*/ + diff - netDelay + msg[3], {
 			// but msg[2] 'beats' does *not* account for latency; scale to tempo
 			latency = msg[3];
 			this.prTempo_(msg[4]).prBeats_(msg[2] + (latency * msg[4]));
@@ -256,24 +219,5 @@ DDWSlaveClock : TempoClock {
 			"DDWSlaveClock found network delay of %\n".postf(netDelay);
 			reply.free;
 		}.play(AppClock)
-	}
-
-	medianSize_ { |n = 7|
-		var new;
-		case
-		{ n < medianSize } {
-			new = array.size - n;
-			array = array.select { |item, i| indexArray[i] > new };
-			indexArray = indexArray.select { |item, i| indexArray[i] > new };
-		}
-		{ n > medianSize } {
-			new = Array(n);
-			array.do { |item| new.add(item) };
-			array = new;
-			new = Array(n);
-			indexArray.do { |item| new.add(item) };
-			indexArray = new;
-		};
-		medianSize = n;
 	}
 }
