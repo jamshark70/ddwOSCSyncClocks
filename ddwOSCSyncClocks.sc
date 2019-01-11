@@ -58,7 +58,7 @@ DDWMasterClock : TempoClock {
 		// 'this.beats' now, but 'latency' timestamps for future
 		// slave's responsibility to calculate the later beats value
 		// that may be a mistake
-		addr.sendBundle(latency, ['/ddwClock', id, this.beats, latency, this.tempo, SystemClock.seconds, SystemClock.seconds]);
+		addr.sendBundle(latency, ['/ddwClock', id, this.beats, latency, this.tempo]);
 	}
 
 	startAliveThread {
@@ -92,17 +92,6 @@ DDWMasterClock : TempoClock {
 	freePingResponder {
 		pingResp.free;
 		pingResp = nil;
-	}
-}
-
-UnstableMasterClock : DDWMasterClock {
-	var <>instability = 0.065;
-	prSendSync {
-		// for testing: send one time value with a random offset,
-		// simulating network jitter
-		// We also send SystemClock.seconds to simulate the timestamp+latency (which is stable)
-		addr.sendBundle(latency, ['/ddwClock', id, this.beats, latency, this.tempo,
-			SystemClock.seconds + instability.rand2, SystemClock.seconds]);
 	}
 }
 
@@ -171,12 +160,12 @@ DDWSlaveClock : TempoClock {
 			uncertainty = 10000;  // no confidence in first 'diff' guess
 			clockResp = OSCFunc({ |msg, time, argAddr|
 				// difference = (sysclock + latency) - (time already includes latency)
-				value = (SystemClock.seconds - msg[5] /*time*/) /*+ msg[3]*/;
+				value = (SystemClock.seconds - time) + msg[3];
 				uncertainty = uncertainty + clockDriftFactor;
 				kGain = uncertainty / (uncertainty + measurementError);
 				diff = diff + (kGain * (value - diff));  // "estimate current state"
 				uncertainty = (1 - kGain) * uncertainty;
-				[msg[5], msg[6], SystemClock.seconds, value, diff/*, array.size*/].debug("calibrating");
+				// [msg[5], msg[6], SystemClock.seconds, value, diff].debug("calibrating");
 				if(netDelay.notNil) {
 					this.prSync(msg, time);
 				} {
@@ -192,7 +181,7 @@ DDWSlaveClock : TempoClock {
 		// diff = (my time - their time);
 		// 'time' is their time so it's their time + my time - their time --> my time
 		// also, 'time' already includes latency so don't add/subtract it here
-		SystemClock.schedAbs(msg[6]/*time*/ + diff - netDelay + msg[3], {
+		SystemClock.schedAbs(time + diff - netDelay, {
 			// but msg[2] 'beats' does *not* account for latency; scale to tempo
 			latency = msg[3];
 			this.prTempo_(msg[4]).prBeats_(msg[2] + (latency * msg[4]));
