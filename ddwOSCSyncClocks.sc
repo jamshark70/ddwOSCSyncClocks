@@ -182,9 +182,12 @@ DDWSlaveClock : TempoClock {
 		// 'time' is their time so it's their time + my time - their time --> my time
 		// also, 'time' already includes latency so don't add/subtract it here
 		SystemClock.schedAbs(time + diff - netDelay, {
-			// but msg[2] 'beats' does *not* account for latency; scale to tempo
-			latency = msg[3];
-			this.prTempo_(msg[4]).prBeats_(msg[2] + (latency * msg[4]));
+			// an update might have been scheduled when you did 'clock.stop'
+			if(this.isRunning) {
+				// but msg[2] 'beats' does *not* account for latency; scale to tempo
+				latency = msg[3];
+				this.prTempo_(msg[4]).prBeats_(msg[2] + (latency * msg[4]));
+			};
 		});
 	}
 	prTempo_ { |newTempo| ^super.tempo = newTempo }
