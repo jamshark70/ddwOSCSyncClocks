@@ -84,7 +84,7 @@ DDWMasterClock : TempoClock {
 	makePingResponder {
 		if(pingResp.isNil) {
 			pingResp = OSCFunc({ |msg, time, addr|  // need sender's address
-				addr.sendMsg('/ddwPingReply');
+				addr.sendMsg('/ddwPingReply', msg[1]);
 			}, '/ddwPing');
 		}
 	}
@@ -96,27 +96,22 @@ DDWMasterClock : TempoClock {
 }
 
 DDWSlaveClock : TempoClock {
-	var <latency, <netDelay, <diff, <addr, <>id;
+	var <latency, <netDelay = 0, <diff, <addr, <>id;
 	var clockResp, meterResp, stopResp;
 	// Kalman variables
-	var guess, uncertainty, kGain,
+	var uncertainty, kGain,
 	<>clockDriftFactor = 0.00001,  // "process noise" in Kalman literature
 	<>measurementError = 0.003;  // "measurement uncertainty"
-	var recalibrate = false;
+	var pingThread, pingResp;
+	var <>debugInstability = 0, <>debug = false;
 
 	// tempo, beats, seconds retained for compatibility, but they are overwritten
 	*new { |tempo, beats, seconds, queueSize = 256, id|
 		^super.new(tempo, beats, seconds, queueSize).id_(id).makeResponder(id)
 	}
 
-	init { arg tempo, beats, seconds, queueSize;
-		super.init(tempo, beats, seconds, queueSize);
-		NetAddr.broadcastFlag = true;
-		addr = NetAddr("255.255.255.255", 57120);  // probably change port later
-		// this.ping/*.makeResponder*/;
-	}
-
 	stop {
+		this.stopAliveThread;
 		stopResp.free;
 		clockResp.free;
 		meterResp.free;
@@ -160,17 +155,19 @@ DDWSlaveClock : TempoClock {
 			uncertainty = 10000;  // no confidence in first 'diff' guess
 			clockResp = OSCFunc({ |msg, time, argAddr|
 				// difference = (sysclock + latency) - (time already includes latency)
-				value = (SystemClock.seconds - time) + msg[3];
+				value = (SystemClock.seconds - time) + msg[3] + debugInstability.rand;
 				uncertainty = uncertainty + clockDriftFactor;
 				kGain = uncertainty / (uncertainty + measurementError);
 				diff = diff + (kGain * (value - diff));  // "estimate current state"
 				uncertainty = (1 - kGain) * uncertainty;
-				// [msg[5], msg[6], SystemClock.seconds, value, diff].debug("calibrating");
-				if(netDelay.notNil) {
-					this.prSync(msg, time);
-				} {
+				if(debug) {
+					[SystemClock.seconds, time, value, diff].debug("DDWSlaveClock(%)".format(id));
+				};
+				if(addr.isNil) {
 					addr = argAddr;
-					this.ping;
+					this.startAliveThread;
+				} {
+					this.prSync(msg, time);
 				};
 			}, '/ddwClock', argTemplate: argTemplate);
 		}
@@ -193,23 +190,47 @@ DDWSlaveClock : TempoClock {
 	prTempo_ { |newTempo| ^super.tempo = newTempo }
 	prBeats_ { |newBeats| ^super.beats = newBeats }
 
-	// need a timeout for this in case it fails
-	ping { |n(20)|
-		Routine {
-			var sum = 0, cond = Condition.new,
-			lastSent,
-			reply = OSCFunc({
-				sum = sum + SystemClock.seconds - lastSent;
-				cond.unhang;
+	startAliveThread {
+		var lastSent, count = 0;
+		var uncertainty = 10000, kGain,
+		processNoise = 0.0000001,  // "process noise" in Kalman literature
+		measurementError = 0.00003;  // "measurement uncertainty"
+		var cond = Condition.new;
+		if(pingResp.isNil) {
+			pingResp = OSCFunc({ |msg|
+				var delta;
+				if(msg[1] == count) {
+					delta = SystemClock.seconds - lastSent + debugInstability.rand;
+					count = count + 1;
+					uncertainty = uncertainty + processNoise;
+					kGain = uncertainty / (uncertainty + measurementError);
+					netDelay = netDelay + (kGain * (delta - netDelay));  // "estimate current state"
+					uncertainty = (1 - kGain) * uncertainty;
+					if(debug) {
+						[count, delta, netDelay].debug("DDWSlaveClock(%) ping".format(id));
+					};
+					cond.unhang;
+				};
 			}, '/ddwPingReply');
-			n.do { |i|
+		};
+		pingThread.stop;
+		pingThread = Routine {
+			// IMPORTANT: make sure there is only one pending /ping query
+			// Condition should guarantee this
+			netDelay = 0;
+			loop {
 				lastSent = SystemClock.seconds;
-				addr.sendMsg('/ddwPing');
+				addr.sendMsg('/ddwPing', count);
 				cond.hang;
-				netDelay = sum / (i+1);
+				rrand(0.2, 0.6).wait;
 			};
-			"DDWSlaveClock found network delay of %\n".postf(netDelay);
-			reply.free;
 		}.play(AppClock)
+	}
+
+	stopAliveThread {
+		pingResp.free;
+		pingResp = nil;
+		pingThread.stop;
+		pingThread = nil;
 	}
 }
