@@ -5,7 +5,7 @@ related:: Classes/DDWSlaveClock, Classes/TempoClock
 
 DESCRIPTION::
 
-With link::Classes/DDWSlaveClock::, a minimalistic master-slave approach to synchronizing multiple SuperCollider language instances over a local network.
+With link::Classes/DDWSlaveClock::, a minimalistic master-slave approach to synchronizing multiple SuperCollider language instances over a local network. (For technical details, see link::Classes/DDWSlaveClock#How it works::.)
 
 The local network should allow broadcast messages (IP address code::"255.255.255.255"::). If your system has a firewall, make sure SuperCollider's ports (57120, 57110) are open for UDP traffic.
 
