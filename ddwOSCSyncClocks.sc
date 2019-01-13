@@ -192,9 +192,7 @@ DDWSlaveClock : TempoClock {
 
 	startAliveThread {
 		var lastSent, count = 0;
-		var uncertainty = 10000, kGain,
-		processNoise = 0.0000001,  // "process noise" in Kalman literature
-		measurementError = 0.00003;  // "measurement uncertainty"
+		var uncertainty = 10000, kGain;
 		var cond = Condition.new;
 		if(pingResp.isNil) {
 			pingResp = OSCFunc({ |msg|
@@ -203,7 +201,7 @@ DDWSlaveClock : TempoClock {
 					delta = 0.5 * (SystemClock.seconds - lastSent
 						+ debugInstability.value + debugInstability.value);
 					count = count + 1;
-					uncertainty = uncertainty + processNoise;
+					uncertainty = uncertainty + clockDriftFactor;
 					kGain = uncertainty / (uncertainty + measurementError);
 					netDelay = netDelay + (kGain * (delta - netDelay));  // "estimate current state"
 					uncertainty = (1 - kGain) * uncertainty;
