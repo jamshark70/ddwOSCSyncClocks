@@ -78,7 +78,7 @@ subsection:: Statistics methods (normally not used)
 
 METHOD:: clockDriftFactor
 
-A float, representing the expected rate of drift between the local machine's system clock and the remote master's system clock. Formally, this is the "process noise variance" in a one-dimensional Kalman filter -- as variance is the average deviation from the mean squared, and we expect fractional values well below 1.0, the squared difference should be lower than the actual drift rate. Normally, you should not need to change this. If you find sync is unacceptable, you might get better results by adjusting it.
+A float, representing the expected rate of drift between the local machine's system clock and the remote master's system clock. Formally, this is the "process noise variance" in a one-dimensional Kalman filter (link::https://www.kalmanfilter.net/kalman1d.html#kf2::) -- as variance is the average deviation from the mean squared, and we expect fractional values well below 1.0, the squared difference should be lower than the actual drift rate. Normally, you should not need to change this. If you find sync is unacceptable, you might get better results by adjusting it.
 
 METHOD:: measurementError
 
