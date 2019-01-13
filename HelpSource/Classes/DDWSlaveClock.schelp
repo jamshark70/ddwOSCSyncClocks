@@ -74,14 +74,26 @@ The link::Classes/NetAddr:: from which sync messages are coming. You cannot chan
 
 returns:: A NetAddr.
 
-METHOD:: ping
-Called automatically during initialization, this method repeatedly sends messages to the master machine and waits for a reply. The average round-trip time is then divided by two, for the one-way transmission time. Accessible for debugging purposes only; this information is not useful for scheduling.
+subsection:: Statistics methods (normally not used)
 
-ARGUMENT:: n
-The number of times to ping the master.
+METHOD:: clockDriftFactor
+
+A float, representing the expected rate of drift between the local machine's system clock and the remote master's system clock. Formally, this is the "process noise variance" in a one-dimensional Kalman filter -- as variance is the average deviation from the mean squared, and we expect fractional values well below 1.0, the squared difference should be lower than the actual drift rate. Normally, you should not need to change this. If you find sync is unacceptable, you might get better results by adjusting it.
+
+METHOD:: measurementError
+
+A float, representing the expected variance in network message transmission times. Normally, you should not need to change this. If you find sync is unacceptable, you might get better results by adjusting it.
+
+METHOD:: debug
+
+A Boolean. If true, messages will be printed in the post window, providing statistics about clock difference and network latency measurement. Normally, you should leave it at the default (false).
+
+METHOD:: debugInstability
+
+Either 0, or a Function returning random positive numbers to be added to network measurements. In production, do not use this! There will be enough network jitter as it is. This method is intended only for testing sync between two sclang processes on the same machine.
 
 
-PRIVATE:: makeResponder, prSync, stop, prTempo, prBeats, beats, beatsPerBar, tempo
+PRIVATE:: makeResponder, prSync, stop, prTempo, prBeats, beats, beatsPerBar, tempo, startAliveThread, stopAliveThread
 
 
 
@@ -132,8 +144,10 @@ The master clock runs as a normal TempoClock. At random intervals (random, to av
 
 Slave clocks receive these bundles, and schedule an action to match the incoming timestamp. The action updates 'this' DDWSlaveClock's tempo and beat counter (see link::Classes/TempoClock#-beats::). Sclang receives the bundle immediately; the timestamp reflects the future time when the update should happen, irrespective of network jitter (in the same way that scsynth schedules timestamped bundles for reliable timing). The timestamps are not subject to jitter, so, scheduling the clock update according to the timestamp is also not subject to jitter.
 
-The problem: The slave's system time is probably different from the master's. The timestamp received in link::Classes/OSCFunc:: is correct on the master machine, but not on the slave, but the difference between the two should be constant. If we can measure the difference, then it is easy to convert the timestamp into the local code::SystemClock.seconds::. But the slave sclang emphasis::does not know when (in its own timebase) the message was sent::, only when the message was received. Receipt time emphasis::is:: subject to jitter. There is always "measurement error," which may be severe (I observed up to +/-70 ms inconsistency).
+The problem: The slave's system time is probably different from the master's. The timestamp received in link::Classes/OSCFunc:: is correct on the master machine, but not on the slave, but the difference between the two should be constant. If we can measure the difference, then it is easy to convert the timestamp into the local code::SystemClock.seconds::. But the slave sclang emphasis::does not know when (in its own timebase) the message was sent::, only when the message was received. Receipt time emphasis::is:: subject to jitter. There is always "measurement error," which may be severe (I observed up to +130 ms inconsistency).
 
 To address this, I use a one-dimensional Kalman filter, assuming a stable value (the difference between two clocks' times in seconds should be constant) with a large measurement error. In practice, the clocks may drift slightly, but we can assume that any drift will be relatively slow ("process noise" in Kalman filter terms). Apart from this drift, one second on one machine should be one second on the other, so, if there is no network timing jitter, code::SystemClock.seconds - timestamp:: will be constant (or extremely slowly changing).
 
-So we have 1/ stable timestamps and 2/ a relationship between remote and local time that is stabilized by the Kalman filter. I have tested up to +/-100 ms random timing offsets and found that the slave clock performs acceptably for musical content. If network jitter can be reduced, it will perform better.
+At the same time, the slave periodically sends "ping" messages to the master, to estimate the one-way network latency (another Kalman filter). We assume network latency is some kind of random distribution, always positive, that applies consistently to all messages. Therefore, the difference between clock times will be biased slightly more positive than it should be, by an amount roughly equal to the network delay estimated by pinging. So, the sync method subtracts the one-way network delay.
+
+So we have 1/ stable timestamps and 2/ a relationship between remote and local time that is stabilized by Kalman filters. I have tested up to +150 ms random timing offsets and found that the slave clock performs acceptably for musical content. If network jitter can be reduced, it can perform even better.
