@@ -155,7 +155,7 @@ DDWSlaveClock : TempoClock {
 			uncertainty = 10000;  // no confidence in first 'diff' guess
 			clockResp = OSCFunc({ |msg, time, argAddr|
 				// difference = (sysclock + latency) - (time already includes latency)
-				value = (SystemClock.seconds - time) + msg[3] + debugInstability.rand;
+				value = (SystemClock.seconds - time) + msg[3] + debugInstability.value;
 				uncertainty = uncertainty + clockDriftFactor;
 				kGain = uncertainty / (uncertainty + measurementError);
 				diff = diff + (kGain * (value - diff));  // "estimate current state"
@@ -200,7 +200,8 @@ DDWSlaveClock : TempoClock {
 			pingResp = OSCFunc({ |msg|
 				var delta;
 				if(msg[1] == count) {
-					delta = SystemClock.seconds - lastSent + debugInstability.rand;
+					delta = 0.5 * (SystemClock.seconds - lastSent
+						+ debugInstability.value + debugInstability.value);
 					count = count + 1;
 					uncertainty = uncertainty + processNoise;
 					kGain = uncertainty / (uncertainty + measurementError);
