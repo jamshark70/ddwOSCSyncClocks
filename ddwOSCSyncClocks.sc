@@ -145,10 +145,13 @@ DDWSlaveClock : TempoClock {
 		case
 		// default setup: one master, slave doesn't specify ID
 		// first tick message from the master should set the ID
-		{ id.isNil } {
-			clockResp = OSCFunc({ |msg|
+		{ id.isNil or: { addr.isNil } } {
+			clockResp = OSCFunc({ |msg, time, argAddr|
+				"DDWSlaveClock syncing to id % at NetAddr(%, %)\n".postf(msg[1], argAddr.ip, argAddr.port);
+				addr = argAddr;
+				this.startAliveThread;
 				this.makeResponder(msg[1]);
-			}, '/ddwClock');
+			}, '/ddwClock', argTemplate: argTemplate);
 		}
 		{
 			diff = 1;
@@ -163,12 +166,7 @@ DDWSlaveClock : TempoClock {
 				if(debug) {
 					[SystemClock.seconds, time, value, diff].debug("DDWSlaveClock(%)".format(id));
 				};
-				if(addr.isNil) {
-					addr = argAddr;
-					this.startAliveThread;
-				} {
-					this.prSync(msg, time);
-				};
+				this.prSync(msg, time);
 			}, '/ddwClock', argTemplate: argTemplate);
 		}
 	}
@@ -223,7 +221,7 @@ DDWSlaveClock : TempoClock {
 				cond.hang;
 				rrand(0.2, 0.6).wait;
 			};
-		}.play(AppClock)
+		}.play(AppClock);
 	}
 
 	stopAliveThread {
