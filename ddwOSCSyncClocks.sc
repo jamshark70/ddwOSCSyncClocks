@@ -102,7 +102,7 @@ DDWSlaveClock : TempoClock {
 	var uncertainty, kGain,
 	<>clockDriftFactor = 0.00001,  // "process noise" in Kalman literature
 	<>measurementError = 0.003;  // "measurement uncertainty"
-	var pingThread, pingResp;
+	var pingThread, pingResp, postPingWarning = true;
 	var <>debugInstability = 0, <>debug = false;
 
 	// tempo, beats, seconds retained for compatibility, but they are overwritten
@@ -136,6 +136,7 @@ DDWSlaveClock : TempoClock {
 		stopResp.free;
 		stopResp = OSCFunc({ |msg|
 			"Master clock ID % stopped. DDWSlaveClock is now free-running.".format(id).warn;
+			postPingWarning = false;
 		}, '/ddwMasterStopped', argTemplate: argTemplate);
 		meterResp.free;
 		meterResp = OSCFunc({ |msg|
@@ -167,6 +168,7 @@ DDWSlaveClock : TempoClock {
 					[SystemClock.seconds, time, value, diff].debug("DDWSlaveClock(%)".format(id));
 				};
 				this.prSync(msg, time);
+				postPingWarning = true;
 			}, '/ddwClock', argTemplate: argTemplate);
 		}
 	}
@@ -191,7 +193,19 @@ DDWSlaveClock : TempoClock {
 	startAliveThread {
 		var lastSent, count = 0;
 		var uncertainty = 10000, kGain;
-		var cond = Condition.new;
+		var cond = Condition.new,
+		// we need a timeout because I've observed dropped packets in real networks
+		// if a ping request or reply gets dropped, then this thread would hang forever
+		timeoutFunc = { |currentCount|
+			// if the ping reply doesn't come back in 2 seconds, something is wrong
+			AppClock.sched(2.0, {
+				if(postPingWarning and: { count == currentCount and: { this.isRunning } }) {
+					"DDWSlaveClock(%): Ping at count % timed out after 2 seconds"
+					.format(id, count).warn;
+					cond.unhang;
+				};
+			});
+		};
 		if(pingResp.isNil) {
 			pingResp = OSCFunc({ |msg|
 				var delta;
@@ -218,8 +232,9 @@ DDWSlaveClock : TempoClock {
 			loop {
 				lastSent = SystemClock.seconds;
 				addr.sendMsg('/ddwPing', count);
+				timeoutFunc.value(count);
 				cond.hang;
-				rrand(0.2, 0.6).wait;
+				rrand(0.4, 0.8).wait;
 			};
 		}.play(AppClock);
 	}
@@ -230,4 +245,6 @@ DDWSlaveClock : TempoClock {
 		pingThread.stop;
 		pingThread = nil;
 	}
+
+	isRunning { ^ptr.notNil }  // unbelievably, TempoClock doesn't supply this
 }
