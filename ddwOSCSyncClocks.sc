@@ -159,21 +159,25 @@ DDWSlaveClock : TempoClock {
 			diff = 1;
 			uncertainty = 10000;  // no confidence in first 'diff' guess
 			clockResp = OSCFunc({ |msg, time, argAddr|
-				// difference = (sysclock + latency) - (time already includes latency)
-				value = (SystemClock.seconds - time) + msg[3] + debugInstability.value;
-				uncertainty = uncertainty + clockDriftFactor;
-				kGain = uncertainty / (uncertainty + measurementError);
-				diff = diff + (kGain * (value - diff));  // "estimate current state"
-				uncertainty = (1 - kGain) * uncertainty;
-				if(debug) {
-					[SystemClock.seconds, time, value, diff].debug("DDWSlaveClock(%)".format(id));
-				};
-				this.prSync(msg, time);
-				postPingWarning = true;
-				if(waiting) {
-					// should not send this until after the first prSync
-					this.changed(\ddwSlaveClockSynced, id);
-					waiting = false;
+				// if something blocks the language for awhile, e.g. MIDI init,
+				// SystemClock.seconds will be late and mess up the clock difference
+				// we should ignore sync messages that arrived too late to sync on time
+				if(SystemClock.seconds < (time + diff - netDelay)) {
+					value = (SystemClock.seconds - time) + msg[3] + debugInstability.value;
+					uncertainty = uncertainty + clockDriftFactor;
+					kGain = uncertainty / (uncertainty + measurementError);
+					diff = diff + (kGain * (value - diff));  // "estimate current state"
+					uncertainty = (1 - kGain) * uncertainty;
+					if(debug) {
+						[SystemClock.seconds, time, value, diff].debug("DDWSlaveClock(%)".format(id));
+					};
+					this.prSync(msg, time);
+					postPingWarning = true;
+					if(waiting) {
+						// should not send this until after the first prSync
+						this.changed(\ddwSlaveClockSynced, id);
+						waiting = false;
+					};
 				};
 			}, '/ddwClock', argTemplate: argTemplate);
 
