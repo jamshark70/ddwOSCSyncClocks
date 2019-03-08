@@ -55,10 +55,10 @@ DDWMasterClock : TempoClock {
 	}
 
 	prSendSync {
-		// 'this.beats' now, but 'latency' timestamps for future
-		// slave's responsibility to calculate the later beats value
-		// that may be a mistake
-		addr.sendBundle(latency, ['/ddwClock', id, this.beats, latency, this.tempo]);
+		// msg[2] should be the beats in the future, after 'latency' seconds
+		// simplifies slaveclock's calculation
+		addr.sendBundle(latency,
+			['/ddwClock', id, this.beats + (latency * this.tempo), latency, this.tempo]);
 	}
 
 	startAliveThread {
@@ -188,9 +188,8 @@ DDWSlaveClock : TempoClock {
 		SystemClock.schedAbs(time + diff - netDelay, {
 			// an update might have been scheduled when you did 'clock.stop'
 			if(this.isRunning) {
-				// but msg[2] 'beats' does *not* account for latency; scale to tempo
 				latency = msg[3];
-				this.prTempo_(msg[4]).prBeats_(msg[2] + (latency * msg[4]));
+				this.prTempo_(msg[4]).prBeats_(msg[2]);
 			};
 		});
 	}
