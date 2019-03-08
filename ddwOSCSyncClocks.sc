@@ -130,13 +130,14 @@ DDWSlaveClock : TempoClock {
 	}
 
 	makeResponder { |argId|
-		var argTemplate, value;
+		var argTemplate, value, waiting = true;
 		id = argId;
 		argTemplate = if(id.notNil) { [id] } { nil };
 		stopResp.free;
 		stopResp = OSCFunc({ |msg|
 			"Master clock ID % stopped. DDWSlaveClock is now free-running.".format(id).warn;
 			postPingWarning = false;
+			this.changed(\ddwSlaveClockUnsynced);
 		}, '/ddwMasterStopped', argTemplate: argTemplate);
 		meterResp.free;
 		meterResp = OSCFunc({ |msg|
@@ -169,7 +170,13 @@ DDWSlaveClock : TempoClock {
 				};
 				this.prSync(msg, time);
 				postPingWarning = true;
+				if(waiting) {
+					// should not send this until after the first prSync
+					this.changed(\ddwSlaveClockSynced, id);
+					waiting = false;
+				};
 			}, '/ddwClock', argTemplate: argTemplate);
+
 		}
 	}
 
