@@ -130,7 +130,7 @@ DDWSlaveClock : TempoClock {
 	}
 
 	makeResponder { |argId|
-		var argTemplate, value, waiting = true;
+		var argTemplate, value, waiting = true, test;
 		id = argId;
 		argTemplate = if(id.notNil) { [id] } { nil };
 		stopResp.free;
@@ -158,11 +158,21 @@ DDWSlaveClock : TempoClock {
 		{
 			diff = 1;
 			uncertainty = 10000;  // no confidence in first 'diff' guess
+			test = Routine { |time|
+				// at first, 'diff' hasn't been calculated
+				// if the slave's SystemClock is later than the master's,
+				// the slave never initializes and ignores all sync messages
+				// so, guarantee at least 30 cycles of the Kalman filter
+				30.do { time = true.yield };
+				this.changed(\ddwSlaveClockSynced, id);
+				loop { time = (SystemClock.seconds < (time + diff - netDelay)).yield };
+			};
 			clockResp = OSCFunc({ |msg, time, argAddr|
 				// if something blocks the language for awhile, e.g. MIDI init,
 				// SystemClock.seconds will be late and mess up the clock difference
 				// we should ignore sync messages that arrived too late to sync on time
-				if(SystemClock.seconds < (time + diff - netDelay)) {
+				// note that 'diff' includes latency (msg[3]) already
+				if(test.next(time)) {
 					value = (SystemClock.seconds - time) + msg[3] + debugInstability.value;
 					uncertainty = uncertainty + clockDriftFactor;
 					kGain = uncertainty / (uncertainty + measurementError);
@@ -175,7 +185,7 @@ DDWSlaveClock : TempoClock {
 					postPingWarning = true;
 					if(waiting) {
 						// should not send this until after the first prSync
-						this.changed(\ddwSlaveClockSynced, id);
+						this.changed(\ddwSlaveClockId, id);
 						waiting = false;
 					};
 				};
