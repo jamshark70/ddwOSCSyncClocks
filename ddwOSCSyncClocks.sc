@@ -165,6 +165,7 @@ DDWSlaveClock : TempoClock {
 				// so, guarantee at least 30 cycles of the Kalman filter
 				30.do { time = true.yield };
 				this.changed(\ddwSlaveClockSynced, id);
+				"DDWSlaveClock(%) synced\n".postf(id);
 				loop { time = (SystemClock.seconds < (time + diff - netDelay)).yield };
 			};
 			clockResp = OSCFunc({ |msg, time, argAddr|
