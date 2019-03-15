@@ -188,6 +188,8 @@ DDWSlaveClock : TempoClock {
 						this.changed(\ddwSlaveClockId, id);
 						waiting = false;
 					};
+				} {
+					if(debug) { msg.debug("DDWSlaveClock(%): message arrived late".format(id)) };
 				};
 			}, '/ddwClock', argTemplate: argTemplate);
 
@@ -207,7 +209,11 @@ DDWSlaveClock : TempoClock {
 			};
 		});
 	}
-	prTempo_ { |newTempo| ^super.tempo = newTempo }
+	prTempo_ { |newTempo|
+		if(newTempo != this.tempo) {
+			super.tempo = newTempo
+		};
+	}
 	prBeats_ { |newBeats| ^super.beats = newBeats }
 
 	startAliveThread {
