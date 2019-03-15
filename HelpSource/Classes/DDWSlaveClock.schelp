@@ -11,8 +11,6 @@ The local network should allow broadcast messages (IP address code::"255.255.255
 
 Both DDWSlaveClock and link::Classes/DDWMasterClock:: inherit from TempoClock. After creating the clocks, their operation is identical to that of TempoClock. Basic TempoClock features are not documented here; consult the link::Classes/TempoClock:: help file for details.
 
-NOTE:: For obvious reasons, you should not try to change a slave clock's tempo or beats. By design, these are synchronized to the master. ::
-
 Subsection:: Usage
 
 Normal usage is:
@@ -57,7 +55,7 @@ METHOD:: new
 Create a slave clock instance.
 
 ARGUMENT:: tempo
-Retained for interface compatibility with TempoClock. Once this clock syncs to a master, any tempo you provide here will be ignored.
+Retained for interface compatibility with TempoClock, but will be quickly overridden by the master clock's tempo.
 
 ARGUMENT:: beats
 Retained for interface compatibility with TempoClock.
@@ -75,6 +73,14 @@ returns:: The new clock instance.
 
 
 INSTANCEMETHODS::
+
+METHOD:: tempo
+Get or set the current tempo. This will try to send the tempo change to the master clock, to broadcast to other slave clocks. Sync may be slightly unstable at the moment of changing tempo, but should recover quickly.
+
+argument:: newTempo
+A float, in beats per second.
+
+returns:: A number.
 
 METHOD:: id
 The clock's ID.

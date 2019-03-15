@@ -20,8 +20,8 @@ DDWMasterClock : TempoClock {
 	classvar pingResp;
 
 	var <>id,
-	thread, <>addr, <>latency = 0.2;
-	var <>period = 0.05;
+	thread, <>addr, tempoResp;
+	var <>latency = 0.2, <>period = 0.05;
 
 	*new { |tempo, beats, seconds, queueSize = 256, id(UniqueID.next)|
 		^super.new(tempo, beats, seconds, queueSize).id_(id)
@@ -32,11 +32,18 @@ DDWMasterClock : TempoClock {
 		NetAddr.broadcastFlag = true;
 		addr = NetAddr("255.255.255.255", 57120);  // probably change port later
 		this.makePingResponder.startAliveThread;
+		// id is not known until slightly later but I want to use it to filter tempo messages
+		{
+			tempoResp = OSCFunc({ |msg|
+				this.tempo = msg[2];
+			}, '/ddwSlaveClockTempo_', argTemplate: [id]);
+		}.defer(0);
 		ShutDown.add(this);
 	}
 
 	// removes the clock, so, clean up everything
 	stop {
+		tempoResp.free;
 		this.stopAliveThread;
 		addr.sendMsg('/ddwMasterStopped', id);
 		ShutDown.remove(this);
@@ -119,8 +126,14 @@ DDWSlaveClock : TempoClock {
 		super.stop;
 	}
 
-	tempo_ {
-		Error("DDWSlaveClock cannot set tempo directly (id = %)".format(id)).throw;
+	tempo_ { |newTempo|
+		if(newTempo.isNumber.not) {
+			Error("Tempo % should be a number".format(newTempo)).throw;
+		};
+		if(addr.notNil) {
+			addr.sendMsg('/ddwSlaveClockTempo_', id, newTempo.asFloat);
+		};
+		super.tempo = newTempo;
 	}
 	beatsPerBar_ {
 		Error("DDWSlaveClock cannot set beatsPerBar directly (id = %)".format(id)).throw;
