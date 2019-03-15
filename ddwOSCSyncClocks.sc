@@ -21,7 +21,7 @@ DDWMasterClock : TempoClock {
 
 	var <>id,
 	thread, <>addr, <>latency = 0.2;
-	var <>period = 0.2;
+	var <>period = 0.05;
 
 	*new { |tempo, beats, seconds, queueSize = 256, id(UniqueID.next)|
 		^super.new(tempo, beats, seconds, queueSize).id_(id)
