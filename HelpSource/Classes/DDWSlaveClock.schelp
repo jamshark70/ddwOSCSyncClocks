@@ -26,6 +26,31 @@ For this use case, the procedure is: 1. Create the master clock. 2. On the other
 
 It is also possible to run multiple master clocks, at different tempi. Each master clock should have a different ID. (If you don't provide one, an ID will be chosen from link::Classes/UniqueID::, but if you need multiple tempi, it is highly recommended to specify an ID as a number or link::Classes/Symbol::.) Then, slave clocks can be created for specific IDs. (Note: This scenario is not extensively tested yet.)
 
+Subsection:: Initialization
+
+It is recommended, for the first few seconds after creating a code::DDWSlaveClock::, to avoid heavy synchronous initialization that will block the interpreter (such as loading long code blocks from other files, preparing large collections, etc.).
+
+code::DDWSlaveClock:: tries to measure the difference between the local system time and the master's system time. This assumes the interpreter can respond instantaneously to incoming OSC messages. If a sync message arrives while the language is processing e.g. a million-item array, the local response time will be delayed and the estimate of the time difference will be incorrect.
+
+You should allow code::DDWSlaveClock:: to run without other heavy activities until it has stabilized. Either do the heavy lifting before creating the slave clock, or wait for a code::\ddwSlaveClockSynced:: notification from the clock, e.g.:
+
+code::
+(
+fork {
+	var cond = Condition.new, resp;
+	t = DDWSlaveClock.new;
+	resp = SimpleController(t).put(\ddwSlaveClockSynced, {
+		resp.remove;  // clean up dependency
+		cond.unhang;  // continue
+	});
+	cond.hang;
+	"doing the rest of the init here".postln;
+}
+)
+::
+
+(In this case, init will not happen if it can't find a master clock.)
+
 CLASSMETHODS::
 
 METHOD:: new
