@@ -90,6 +90,11 @@ The latency value in the sync messages coming from the master.
 
 returns:: A numeric latency value.
 
+METHOD:: bias
+Sets or gets a timing offset. Positive numbers shift the clock earlier. You may need to increase the master clock's latency for a positive bias. (Network delivery times in Windows are unstable, in some cases causing sync to be offset by a seemingly fixed amount. If this happens, usually the slave clock is late.)
+
+returns:: A numeric timing offset.
+
 METHOD:: diff
 Accounts for the difference between the master machine's system clock and the local machine's clock. (You cannot assume code::SystemClock.seconds:: will be the same across multiple machines.) Accessible for debugging purposes only; this information is not useful for scheduling.
 

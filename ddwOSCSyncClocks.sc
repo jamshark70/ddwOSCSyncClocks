@@ -103,7 +103,7 @@ DDWMasterClock : TempoClock {
 }
 
 DDWSlaveClock : TempoClock {
-	var <latency, <netDelay = 0, <diff, <addr, <>id;
+	var <>bias = 0, <latency, <netDelay = 0, <diff, <addr, <>id;
 	var clockResp, meterResp, stopResp;
 	// Kalman variables
 	var uncertainty, kGain,
@@ -179,7 +179,7 @@ DDWSlaveClock : TempoClock {
 				30.do { time = true.yield };
 				this.changed(\ddwSlaveClockSynced, id);
 				"DDWSlaveClock(%) synced\n".postf(id);
-				loop { time = (SystemClock.seconds < (time + diff - netDelay)).yield };
+				loop { time = (SystemClock.seconds < (time + diff - netDelay - bias)).yield };
 			};
 			clockResp = OSCFunc({ |msg, time, argAddr|
 				// if something blocks the language for awhile, e.g. MIDI init,
@@ -215,7 +215,7 @@ DDWSlaveClock : TempoClock {
 		// diff = (my time - their time);
 		// 'time' is their time so it's their time + my time - their time --> my time
 		// also, 'time' already includes latency so don't add/subtract it here
-		SystemClock.schedAbs(time + diff - netDelay, {
+		SystemClock.schedAbs(time + diff - netDelay - bias, {
 			// an update might have been scheduled when you did 'clock.stop'
 			if(this.isRunning) {
 				latency = msg[3];
