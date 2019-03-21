@@ -189,7 +189,7 @@ DDWSlaveClock : TempoClock {
 				// we should ignore sync messages that arrived too late to sync on time
 				// note that 'diff' NO LONGER includes latency (msg[3]) already
 				if(test.next(time)) {
-					value = (SystemClock.seconds - time) + msg[3] + debugInstability.value;
+					value = (SystemClock.seconds - time) + debugInstability.value;
 					uncertainty = uncertainty + clockDriftFactor;
 					kGain = uncertainty / (uncertainty + measurementError);
 					diff = diff + (kGain * (value - diff));  // "estimate current state"
