@@ -65,7 +65,7 @@ DDWMasterClock : TempoClock {
 		// msg[2] should be the beats in the future, after 'latency' seconds
 		// simplifies slaveclock's calculation
 		addr.sendBundle(latency,
-			['/ddwClock', id, this.beats + (latency * this.tempo), latency, this.tempo]);
+			['/ddwClock', id, this.beats + (latency * this.tempo), latency, this.tempo, SystemClock.seconds]);
 	}
 
 	startAliveThread {
@@ -179,13 +179,15 @@ DDWSlaveClock : TempoClock {
 				30.do { time = true.yield };
 				this.changed(\ddwSlaveClockSynced, id);
 				"DDWSlaveClock(%) synced\n".postf(id);
-				loop { time = (SystemClock.seconds < (time + diff - netDelay - bias)).yield };
+				loop { time = (SystemClock.seconds < (time + diff - netDelay - bias + latency)).yield };
 			};
 			clockResp = OSCFunc({ |msg, time, argAddr|
+				latency = msg[3];
+				time = msg[5];  // SystemClock.seconds from master
 				// if something blocks the language for awhile, e.g. MIDI init,
 				// SystemClock.seconds will be late and mess up the clock difference
 				// we should ignore sync messages that arrived too late to sync on time
-				// note that 'diff' includes latency (msg[3]) already
+				// note that 'diff' NO LONGER includes latency (msg[3]) already
 				if(test.next(time)) {
 					value = (SystemClock.seconds - time) + msg[3] + debugInstability.value;
 					uncertainty = uncertainty + clockDriftFactor;
@@ -193,7 +195,7 @@ DDWSlaveClock : TempoClock {
 					diff = diff + (kGain * (value - diff));  // "estimate current state"
 					uncertainty = (1 - kGain) * uncertainty;
 					if(debug) {
-						[SystemClock.seconds, time, value, diff].debug("DDWSlaveClock(%)".format(id));
+						[SystemClock.seconds, time + diff - netDelay - bias /*- msg[3]*/, time, value, diff].debug("DDWSlaveClock(%)".format(id));
 					};
 					this.prSync(msg, time);
 					postPingWarning = true;
@@ -203,7 +205,9 @@ DDWSlaveClock : TempoClock {
 						waiting = false;
 					};
 				} {
-					if(debug) { msg.debug("DDWSlaveClock(%): message arrived late".format(id)) };
+					msg.debug(
+						"DDWSlaveClock(%): message arrived late; local SystemClock = %; remote time = %; remote time adjusted = %".format(id, SystemClock.seconds, time, time + diff - netDelay - bias + latency)
+					)
 				};
 			}, '/ddwClock', argTemplate: argTemplate);
 
@@ -215,7 +219,7 @@ DDWSlaveClock : TempoClock {
 		// diff = (my time - their time);
 		// 'time' is their time so it's their time + my time - their time --> my time
 		// also, 'time' already includes latency so don't add/subtract it here
-		SystemClock.schedAbs(time + diff - netDelay - bias, {
+		SystemClock.schedAbs(time + diff - netDelay - bias + latency, {
 			// an update might have been scheduled when you did 'clock.stop'
 			if(this.isRunning) {
 				latency = msg[3];
