@@ -143,7 +143,7 @@ DDWSlaveClock : TempoClock {
 	}
 
 	makeResponder { |argId|
-		var argTemplate, value, waiting = true, test;
+		var argTemplate, value, waiting = true, test, kalman;
 		id = argId;
 		argTemplate = if(id.notNil) { [id] } { nil };
 		stopResp.free;
@@ -169,8 +169,6 @@ DDWSlaveClock : TempoClock {
 			}, '/ddwClock', argTemplate: argTemplate);
 		}
 		{
-			diff = 1;
-			uncertainty = 10000;  // no confidence in first 'diff' guess
 			test = Routine { |time|
 				// at first, 'diff' hasn't been calculated
 				// if the slave's SystemClock is later than the master's,
@@ -181,6 +179,7 @@ DDWSlaveClock : TempoClock {
 				"DDWSlaveClock(%) synced\n".postf(id);
 				loop { time = (SystemClock.seconds < (time + diff - netDelay - bias + latency)).yield };
 			};
+			kalman = this.makeKalman;
 			clockResp = OSCFunc({ |msg, time, argAddr|
 				latency = msg[3];
 				time = msg[5];  // SystemClock.seconds from master
@@ -190,10 +189,7 @@ DDWSlaveClock : TempoClock {
 				// note that 'diff' NO LONGER includes latency (msg[3]) already
 				if(test.next(time)) {
 					value = (SystemClock.seconds - time) + debugInstability.value;
-					uncertainty = uncertainty + clockDriftFactor;
-					kGain = uncertainty / (uncertainty + measurementError);
-					diff = diff + (kGain * (value - diff));  // "estimate current state"
-					uncertainty = (1 - kGain) * uncertainty;
+					diff = kalman.next(value);
 					if(debug) {
 						[SystemClock.seconds, time + diff - netDelay - bias /*- msg[3]*/, time, value, diff].debug("DDWSlaveClock(%)".format(id));
 					};
@@ -236,7 +232,6 @@ DDWSlaveClock : TempoClock {
 
 	startAliveThread {
 		var lastSent, count = 0;
-		var uncertainty = 10000, kGain;
 		var cond = Condition.new,
 		// we need a timeout because I've observed dropped packets in real networks
 		// if a ping request or reply gets dropped, then this thread would hang forever
@@ -249,7 +244,8 @@ DDWSlaveClock : TempoClock {
 					cond.unhang;
 				};
 			});
-		};
+		},
+		kalman = this.makeKalman;
 		if(pingResp.isNil) {
 			pingResp = OSCFunc({ |msg|
 				var delta;
@@ -257,10 +253,7 @@ DDWSlaveClock : TempoClock {
 					delta = 0.5 * (SystemClock.seconds - lastSent
 						+ debugInstability.value + debugInstability.value);
 					count = count + 1;
-					uncertainty = uncertainty + clockDriftFactor;
-					kGain = uncertainty / (uncertainty + measurementError);
-					netDelay = netDelay + (kGain * (delta - netDelay));  // "estimate current state"
-					uncertainty = (1 - kGain) * uncertainty;
+					netDelay = kalman.next(delta);
 					if(debug) {
 						[count, delta, netDelay].debug("DDWSlaveClock(%) ping".format(id));
 					};
@@ -291,4 +284,17 @@ DDWSlaveClock : TempoClock {
 	}
 
 	isRunning { ^ptr.notNil }  // unbelievably, TempoClock doesn't supply this
+
+	makeKalman {
+		^Routine { |value|
+			var uncertainty = 10000, estimate = 1, kGain;
+			loop {
+				uncertainty = uncertainty + clockDriftFactor;
+				kGain = uncertainty / (uncertainty + measurementError);
+				estimate = estimate + (kGain * (value - estimate));  // "estimate current state"
+				uncertainty = (1 - kGain) * uncertainty;
+				value = estimate.yield;
+			}
+		}
+	}
 }
