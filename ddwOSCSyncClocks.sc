@@ -61,22 +61,23 @@ DDWMasterClock : TempoClock {
 		addr.sendMsg('/ddwClockMeter', id, newBeatsPerBar, beats);
 	}
 
-	prSendSync {
+	prSendSync { // |test = 0|
 		// msg[2] should be the beats in the future, after 'latency' seconds
 		// simplifies slaveclock's calculation
 		addr.sendBundle(latency,
-			['/ddwClock', id, this.beats + (latency * this.tempo), latency, this.tempo, SystemClock.seconds]);
+			['/ddwClock', id, this.beats + (latency * this.tempo), latency, this.tempo, SystemClock.seconds /*- test*/]);
 	}
 
 	startAliveThread {
 		if(thread.isNil) {
 			thread = Routine {
+				// var testStream = Pseq([Pn(0, 200), Pn(1, inf)]).asStream;
 				loop {
 					// randomized sync times, to avoid contention at integer valued beats
 					// stealing this idea from Scott Wilson's BeaconClock
 					((rrand(0.25, 0.75) + rrand(0.25, 0.75) + rrand(0.25, 0.75) + rrand(0.25, 0.75))
 						* this.tempo * period).wait;
-					this.prSendSync;
+					this.prSendSync/*(testStream.next.debug)*/;
 				}
 			}.play;
 		};
@@ -143,7 +144,7 @@ DDWSlaveClock : TempoClock {
 	}
 
 	makeResponder { |argId|
-		var argTemplate, value, waiting = true, test, kalman;
+		var argTemplate, value, waiting = true, test, kalman, recovery;
 		id = argId;
 		argTemplate = if(id.notNil) { [id] } { nil };
 		stopResp.free;
@@ -187,8 +188,8 @@ DDWSlaveClock : TempoClock {
 				// SystemClock.seconds will be late and mess up the clock difference
 				// we should ignore sync messages that arrived too late to sync on time
 				// note that 'diff' NO LONGER includes latency (msg[3]) already
+				value = (SystemClock.seconds - time) + debugInstability.value;
 				if(test.next(time)) {
-					value = (SystemClock.seconds - time) + debugInstability.value;
 					diff = kalman.next(value);
 					if(debug) {
 						[SystemClock.seconds, time + diff - netDelay - bias /*- msg[3]*/, time, value, diff].debug("DDWSlaveClock(%)".format(id));
@@ -200,13 +201,41 @@ DDWSlaveClock : TempoClock {
 						this.changed(\ddwSlaveClockId, id);
 						waiting = false;
 					};
+					recovery = nil;  // one on-time message cancels backup filter
 				} {
 					msg.debug(
 						"DDWSlaveClock(%): message arrived late; local SystemClock = %; remote time = %; remote time adjusted = %".format(id, SystemClock.seconds, time, time + diff - netDelay - bias + latency)
-					)
+					);
+					// so this is a kind of insane thing I have to do here.
+					// Messages can be late for 2 reasons:
+					// 1. The slave machine's interpreter is blocked for a few seconds
+					//    (MIDI init, building huge synthdefs, etc.)
+					// 2. Or, one or the other timebase shifted and the old 'diff' is invalid.
+					//    (Obviously this should never happen, but I've seen it, repeatedly.)
+					// For #1, we should temporarily ignore late messages and return to
+					// normal behavior once the delay is cleared.
+					// For #2, we should wait until we're sure it isn't going to recover,
+					// and then switch to a new timebase (replace 'diff' and 'kalman').
+					// #2 IS NEVER SUPPOSED TO HAPPEN but it happens a lot when Windows is involved.
+					if(recovery.isNil) {
+						recovery = Routine { |inval|
+							var kalman2 = this.makeKalman, backupDiff;
+							// should be about 6 seconds
+							// e.g. MIDI init "should" be less than this, I hope
+							60.do {
+								backupDiff = kalman2.next(inval);
+								inval = backupDiff.yield;  // for debug output
+							};
+							// if we got this far, the timebase has changed
+							// so, replace the filter
+							diff = backupDiff;
+							kalman = kalman2;
+							recovery = nil;
+						};
+					};
+					[diff, recovery.next(value)].debug("recalibrating [old, new diff]");
 				};
 			}, '/ddwClock', argTemplate: argTemplate);
-
 		}
 	}
 
