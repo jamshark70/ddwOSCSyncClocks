@@ -178,7 +178,9 @@ DDWSlaveClock : TempoClock {
 				30.do { time = true.yield };
 				this.changed(\ddwSlaveClockSynced, id);
 				"DDWSlaveClock(%) synced\n".postf(id);
-				loop { time = (SystemClock.seconds < (time + diff - netDelay - bias + latency)).yield };
+				loop {
+					time = (SystemClock.seconds absdif: (time + diff - netDelay - bias) < latency).yield
+				};
 			};
 			kalman = this.makeKalman;
 			clockResp = OSCFunc({ |msg, time, argAddr|
@@ -219,10 +221,10 @@ DDWSlaveClock : TempoClock {
 					// #2 IS NEVER SUPPOSED TO HAPPEN but it happens a lot when Windows is involved.
 					if(recovery.isNil) {
 						recovery = Routine { |inval|
-							var kalman2 = this.makeKalman, backupDiff;
-							// should be about 6 seconds
-							// e.g. MIDI init "should" be less than this, I hope
-							60.do {
+							var kalman2 = this.makeKalman, backupDiff,
+							start = SystemClock.seconds;
+							// e.g. MIDI init "should" be less than 5 seconds, I hope
+							while { (SystemClock.seconds - start) < 5.0 } {
 								backupDiff = kalman2.next(inval);
 								inval = backupDiff.yield;  // for debug output
 							};
