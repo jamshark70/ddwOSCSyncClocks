@@ -1,35 +1,35 @@
-TITLE:: DDWMasterClock
-summary:: A master timing source for SuperCollider instances to be synchronized across a network
+TITLE:: DDWLeadClock
+summary:: A lead timing source for SuperCollider instances to be synchronized across a network
 categories:: Scheduling
-related:: Classes/DDWSlaveClock, Classes/TempoClock
+related:: Classes/DDWFollowClock, Classes/TempoClock
 
 DESCRIPTION::
 
-With link::Classes/DDWSlaveClock::, a minimalistic master-slave approach to synchronizing multiple SuperCollider language instances over a local network. (For technical details, see link::Classes/DDWSlaveClock#How it works::.)
+With link::Classes/DDWFollowClock::, a minimalistic lead-follower approach to synchronizing multiple SuperCollider language instances over a local network. (For technical details, see link::Classes/DDWFollowClock#How it works::.)
 
 The local network should allow broadcast messages (IP address code::"255.255.255.255"::). If your system has a firewall, make sure SuperCollider's ports (57120, 57110) are open for UDP traffic.
 
-Currently the master clock sends only to sclang's default port, 57120. You may override link::Classes/DDWMasterClock#-addr:: to change this behavior.
+Currently the lead clock sends only to sclang's default port, 57120. You may override link::Classes/DDWLeadClock#-addr:: to change this behavior.
 
-Both DDWMasterClock and link::Classes/DDWSlaveClock:: inherit from TempoClock. After creating the clocks, their operation is identical to that of TempoClock. Basic TempoClock features are not documented here; consult the link::Classes/TempoClock:: help file for details.
+Both DDWLeadClock and link::Classes/DDWFollowClock:: inherit from TempoClock. After creating the clocks, their operation is identical to that of TempoClock. Basic TempoClock features are not documented here; consult the link::Classes/TempoClock:: help file for details.
 
 Subsection:: Usage
 
 Normal usage is:
 
 list::
-## One master clock, providing a global tempo for the entire network.
-## Any number of slave clocks, on other machines.
+## One lead clock, providing a global tempo for the entire network.
+## Any number of follower clocks, on other machines.
 ::
 
-For this use case, the procedure is: 1. Create the master clock. 2. On the other machines, create one slave clock instance per machine. The slaves should automatically detect sync messages coming from the master, and synchronize beats and tempo within a second or two.
+For this use case, the procedure is: 1. Create the lead clock. 2. On the other machines, create one follower clock instance per machine. The followers should automatically detect sync messages coming from the lead, and synchronize beats and tempo within a second or two.
 
-It is also possible to run multiple master clocks, at different tempi. Each master clock should have a different ID. (If you don't provide one, an ID will be chosen from link::Classes/UniqueID::, but if you need multiple tempi, it is highly recommended to specify an ID as a number or link::Classes/Symbol::.) Then, slave clocks can be created for specific IDs. (Note: This scenario is not extensively tested yet.)
+It is also possible to run multiple lead clocks, at different tempi. Each lead clock should have a different ID. (If you don't provide one, an ID will be chosen from link::Classes/UniqueID::, but if you need multiple tempi, it is highly recommended to specify an ID as a number or link::Classes/Symbol::.) Then, follower clocks can be created for specific IDs. (Note: This scenario is not extensively tested yet.)
 
 CLASSMETHODS::
 
 METHOD:: new
-Create a master clock instance. It will begin broadcasting immediately.
+Create a lead clock instance. It will begin broadcasting immediately.
 
 ARGUMENT:: tempo
 As in TempoClock, the tempo in beats per second.
@@ -44,7 +44,7 @@ ARGUMENT:: queueSize
 As in TempoClock, the size of the scheduler array.
 
 ARGUMENT:: id
-A number or symbol identifying this master clock to other machines. If you only need one master, this is optional; an ID will be chosen for you, and slave clocks will pick up the first ID they receive.
+A number or symbol identifying this lead clock to other machines. If you only need one lead, this is optional; an ID will be chosen for you, and follower clocks will pick up the first ID they receive.
 
 returns:: The new clock instance.
 
@@ -74,8 +74,8 @@ You can run all of this example on one machine in one sclang instance, or run th
 
 code::
 // ****
-// On the master machine:
-t = DDWMasterClock(2);
+// On the lead machine:
+t = DDWLeadClock(2);
 
 (
 p = Pbind(
@@ -85,12 +85,12 @@ p = Pbind(
 )
 
 p.stop;  // when finished
-t.stop;  // this "releases" the slave to run on its own time
+t.stop;  // this "releases" the follower to run on its own time
 
 
 // ****
-// On the slave machine (also works on the master machine)
-u = DDWSlaveClock.new;
+// On the follower machine (also works on the lead machine)
+u = DDWFollowClock.new;
 
 (
 q = Pbind(
@@ -105,4 +105,4 @@ u.stop;
 
 Subsection:: Acknowledgment
 
-Credit is due to Scott Wilson, for one critical idea borrowed from his BeaconClock class (in the Utopia quark). A possible issue with clock sync is processor contention: integer beats tend to be busy. BeaconClock and DDWMasterClock both broadcast sync messages at randomized intervals, so that sync messages will almost certainly be sent "in between" musical events, avoiding messaging delays.
+Credit is due to Scott Wilson, for one critical idea borrowed from his BeaconClock class (in the Utopia quark). A possible issue with clock sync is processor contention: integer beats tend to be busy. BeaconClock and DDWLeadClock both broadcast sync messages at randomized intervals, so that sync messages will almost certainly be sent "in between" musical events, avoiding messaging delays.

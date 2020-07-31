@@ -1,43 +1,43 @@
-TITLE:: DDWSlaveClock
-summary:: A slave clock for SuperCollider instances to be synchronized across a network
+TITLE:: DDWFollowClock
+summary:: A follower clock for SuperCollider instances to be synchronized across a network
 categories:: Scheduling
-related:: Classes/DDWMasterClock, Classes/TempoClock
+related:: Classes/DDWLeadClock, Classes/TempoClock
 
 DESCRIPTION::
 
-With link::Classes/DDWMasterClock::, a minimalistic master-slave approach to synchronizing multiple SuperCollider language instances over a local network. (Technical details below: link::Classes/DDWSlaveClock#How it works::.)
+With link::Classes/DDWLeadClock::, a minimalistic lead-follower approach to synchronizing multiple SuperCollider language instances over a local network. (Technical details below: link::Classes/DDWFollowClock#How it works::.)
 
 The local network should allow broadcast messages (IP address code::"255.255.255.255"::). If your system has a firewall, make sure SuperCollider's ports (57120, 57110) are open for UDP traffic.
 
-Both DDWSlaveClock and link::Classes/DDWMasterClock:: inherit from TempoClock. After creating the clocks, their operation is identical to that of TempoClock. Basic TempoClock features are not documented here; consult the link::Classes/TempoClock:: help file for details.
+Both DDWFollowClock and link::Classes/DDWLeadClock:: inherit from TempoClock. After creating the clocks, their operation is identical to that of TempoClock. Basic TempoClock features are not documented here; consult the link::Classes/TempoClock:: help file for details.
 
 Subsection:: Usage
 
 Normal usage is:
 
 list::
-## One master clock, providing a global tempo for the entire network.
-## Any number of slave clocks, on other machines.
+## One lead clock, providing a global tempo for the entire network.
+## Any number of follower clocks, on other machines.
 ::
 
-For this use case, the procedure is: 1. Create the master clock. 2. On the other machines, create one slave clock instance per machine. The slaves should automatically detect sync messages coming from the master, and synchronize beats and tempo within a second or two.
+For this use case, the procedure is: 1. Create the lead clock. 2. On the other machines, create one follower clock instance per machine. The followers should automatically detect sync messages coming from the lead, and synchronize beats and tempo within a second or two.
 
-It is also possible to run multiple master clocks, at different tempi. Each master clock should have a different ID. (If you don't provide one, an ID will be chosen from link::Classes/UniqueID::, but if you need multiple tempi, it is highly recommended to specify an ID as a number or link::Classes/Symbol::.) Then, slave clocks can be created for specific IDs. (Note: This scenario is not extensively tested yet.)
+It is also possible to run multiple lead clocks, at different tempi. Each lead clock should have a different ID. (If you don't provide one, an ID will be chosen from link::Classes/UniqueID::, but if you need multiple tempi, it is highly recommended to specify an ID as a number or link::Classes/Symbol::.) Then, follower clocks can be created for specific IDs. (Note: This scenario is not extensively tested yet.)
 
 Subsection:: Initialization
 
-It is recommended, for the first few seconds after creating a code::DDWSlaveClock::, to avoid heavy synchronous initialization that will block the interpreter (such as loading long code blocks from other files, preparing large collections, etc.).
+It is recommended, for the first few seconds after creating a code::DDWFollowClock::, to avoid heavy synchronous initialization that will block the interpreter (such as loading long code blocks from other files, preparing large collections, etc.).
 
-code::DDWSlaveClock:: tries to measure the difference between the local system time and the master's system time. This assumes the interpreter can respond instantaneously to incoming OSC messages. If a sync message arrives while the language is processing e.g. a million-item array, the local response time will be delayed and the estimate of the time difference will be incorrect.
+code::DDWFollowClock:: tries to measure the difference between the local system time and the lead's system time. This assumes the interpreter can respond instantaneously to incoming OSC messages. If a sync message arrives while the language is processing e.g. a million-item array, the local response time will be delayed and the estimate of the time difference will be incorrect.
 
-You should allow code::DDWSlaveClock:: to run without other heavy activities until it has stabilized. Either do the heavy lifting before creating the slave clock, or wait for a code::\ddwSlaveClockSynced:: notification from the clock, e.g.:
+You should allow code::DDWFollowClock:: to run without other heavy activities until it has stabilized. Either do the heavy lifting before creating the follower clock, or wait for a code::\ddwFollowClockSynced:: notification from the clock, e.g.:
 
 code::
 (
 fork {
 	var cond = Condition.new, resp;
-	t = DDWSlaveClock.new;
-	resp = SimpleController(t).put(\ddwSlaveClockSynced, {
+	t = DDWFollowClock.new;
+	resp = SimpleController(t).put(\ddwFollowerClockSynced, {
 		resp.remove;  // clean up dependency
 		cond.unhang;  // continue
 	});
@@ -47,15 +47,15 @@ fork {
 )
 ::
 
-(In this case, init will not happen if it can't find a master clock.)
+(In this case, init will not happen if it can't find a lead clock.)
 
 CLASSMETHODS::
 
 METHOD:: new
-Create a slave clock instance.
+Create a follower clock instance.
 
 ARGUMENT:: tempo
-Retained for interface compatibility with TempoClock, but will be quickly overridden by the master clock's tempo.
+Retained for interface compatibility with TempoClock, but will be quickly overridden by the lead clock's tempo.
 
 ARGUMENT:: beats
 Retained for interface compatibility with TempoClock.
@@ -67,7 +67,7 @@ ARGUMENT:: queueSize
 As in TempoClock, the size of the scheduler array.
 
 ARGUMENT:: id
-The ID of the master clock to which to synchronize. Optional: If you don't provide one, this clock will respond to the first sync message it receives, and use the ID in that message.
+The ID of the lead clock to which to synchronize. Optional: If you don't provide one, this clock will respond to the first sync message it receives, and use the ID in that message.
 
 returns:: The new clock instance.
 
@@ -75,7 +75,7 @@ returns:: The new clock instance.
 INSTANCEMETHODS::
 
 METHOD:: tempo
-Get or set the current tempo. This will try to send the tempo change to the master clock, to broadcast to other slave clocks. Sync may be slightly unstable at the moment of changing tempo, but should recover quickly.
+Get or set the current tempo. This will try to send the tempo change to the lead clock, to broadcast to other follower clocks. Sync may be slightly unstable at the moment of changing tempo, but should recover quickly.
 
 argument:: newTempo
 A float, in beats per second.
@@ -86,22 +86,22 @@ METHOD:: id
 The clock's ID.
 
 METHOD:: latency
-The latency value in the sync messages coming from the master.
+The latency value in the sync messages coming from the lead.
 
 returns:: A numeric latency value.
 
 METHOD:: bias
-Sets or gets a timing offset. Positive numbers shift the clock earlier. You may need to increase the master clock's latency for a positive bias. (Network delivery times in Windows are unstable, in some cases causing sync to be offset by a seemingly fixed amount. If this happens, usually the slave clock is late.)
+Sets or gets a timing offset. Positive numbers shift the clock earlier. You may need to increase the lead clock's latency for a positive bias. (Network delivery times in Windows are unstable, in some cases causing sync to be offset by a seemingly fixed amount. If this happens, usually the follower clock is late.)
 
 returns:: A numeric timing offset.
 
 METHOD:: diff
-Accounts for the difference between the master machine's system clock and the local machine's clock. (You cannot assume code::SystemClock.seconds:: will be the same across multiple machines.) Accessible for debugging purposes only; this information is not useful for scheduling.
+Accounts for the difference between the lead machine's system clock and the local machine's clock. (You cannot assume code::SystemClock.seconds:: will be the same across multiple machines.) Accessible for debugging purposes only; this information is not useful for scheduling.
 
 returns:: A number.
 
 METHOD:: netDelay
-An estimate of the time it takes for the sync messages to travel from the master to the local machine. Accessible for debugging purposes only; this information is not useful for scheduling.
+An estimate of the time it takes for the sync messages to travel from the lead to the local machine. Accessible for debugging purposes only; this information is not useful for scheduling.
 
 returns:: A number.
 
@@ -114,7 +114,7 @@ subsection:: Statistics methods (normally not used)
 
 METHOD:: clockDriftFactor
 
-A float, representing the expected rate of drift between the local machine's system clock and the remote master's system clock. Formally, this is the "process noise variance" in a one-dimensional Kalman filter (link::https://www.kalmanfilter.net/kalman1d.html#kf2::) -- as variance is the average deviation from the mean squared, and we expect fractional values well below 1.0, the squared difference should be lower than the actual drift rate. Normally, you should not need to change this. If you find sync is unacceptable, you might get better results by adjusting it.
+A float, representing the expected rate of drift between the local machine's system clock and the remote lead's system clock. Formally, this is the "process noise variance" in a one-dimensional Kalman filter (link::https://www.kalmanfilter.net/kalman1d.html#kf2::) -- as variance is the average deviation from the mean squared, and we expect fractional values well below 1.0, the squared difference should be lower than the actual drift rate. Normally, you should not need to change this. If you find sync is unacceptable, you might get better results by adjusting it.
 
 METHOD:: measurementError
 
@@ -139,8 +139,8 @@ You can run all of this example on one machine in one sclang instance, or run th
 
 code::
 // ****
-// On the master machine:
-t = DDWMasterClock(2);
+// On the lead machine:
+t = DDWLeadClock(2);
 
 (
 p = Pbind(
@@ -150,12 +150,12 @@ p = Pbind(
 )
 
 p.stop;  // when finished
-t.stop;  // this "releases" the slave to run on its own time
+t.stop;  // this "releases" the follower to run on its own time
 
 
 // ****
-// On the slave machine (also works on the master machine)
-u = DDWSlaveClock.new;
+// On the follower machine (also works on the lead machine)
+u = DDWFollowClock.new;
 
 (
 q = Pbind(
@@ -170,20 +170,20 @@ u.stop;
 
 Subsection:: Acknowledgment
 
-Credit is due to Scott Wilson, for one critical idea borrowed from his BeaconClock class (in the Utopia quark). A possible issue with clock sync is processor contention: integer beats tend to be busy. BeaconClock and DDWMasterClock both broadcast sync messages at randomized intervals, so that sync messages will almost certainly be sent "in between" musical events, avoiding messaging delays.
+Credit is due to Scott Wilson, for one critical idea borrowed from his BeaconClock class (in the Utopia quark). A possible issue with clock sync is processor contention: integer beats tend to be busy. BeaconClock and DDWLeadClock both broadcast sync messages at randomized intervals, so that sync messages will almost certainly be sent "in between" musical events, avoiding messaging delays.
 
 Subsection:: How it works
 
 You don't need to know this in order to use the classes. But, it's interesting, and also worth explaining to somebody who might want to modify the classes in the future.
 
-The master clock runs as a normal TempoClock. At random intervals (random, to avoid handling sync at metrically important time points when the language is likely to be busy), the master sends a timestamped OSC bundle containing the clock's ID, current beats, latency and tempo. Timestamps are calculated based on the system time. We assume that both the DDWMasterClock's beat counter and the system time (and therefore, the OSC timestamps) increment in a stable fashion.
+The lead clock runs as a normal TempoClock. At random intervals (random, to avoid handling sync at metrically important time points when the language is likely to be busy), the lead sends a timestamped OSC bundle containing the clock's ID, current beats, latency and tempo. Timestamps are calculated based on the system time. We assume that both the DDWLeadClock's beat counter and the system time (and therefore, the OSC timestamps) increment in a stable fashion.
 
-Slave clocks receive these bundles, and schedule an action to match the incoming timestamp. The action updates 'this' DDWSlaveClock's tempo and beat counter (see link::Classes/TempoClock#-beats::). Sclang receives the bundle immediately; the timestamp reflects the future time when the update should happen, irrespective of network jitter (in the same way that scsynth schedules timestamped bundles for reliable timing). The timestamps are not subject to jitter, so, scheduling the clock update according to the timestamp is also not subject to jitter.
+Follower clocks receive these bundles, and schedule an action to match the incoming timestamp. The action updates 'this' DDWFollowClock's tempo and beat counter (see link::Classes/TempoClock#-beats::). Sclang receives the bundle immediately; the timestamp reflects the future time when the update should happen, irrespective of network jitter (in the same way that scsynth schedules timestamped bundles for reliable timing). The timestamps are not subject to jitter, so, scheduling the clock update according to the timestamp is also not subject to jitter.
 
-The problem: The slave's system time is probably different from the master's. The timestamp received in link::Classes/OSCFunc:: is correct on the master machine, but not on the slave, but the difference between the two should be constant. If we can measure the difference, then it is easy to convert the timestamp into the local code::SystemClock.seconds::. But the slave sclang emphasis::does not know when (in its own timebase) the message was sent::, only when the message was received. Receipt time emphasis::is:: subject to jitter. There is always "measurement error," which may be severe (I observed up to +130 ms inconsistency).
+The problem: The follower's system time is probably different from the lead's. The timestamp received in link::Classes/OSCFunc:: is correct on the lead machine, but not on the follower, but the difference between the two should be constant. If we can measure the difference, then it is easy to convert the timestamp into the local code::SystemClock.seconds::. But the follower sclang emphasis::does not know when (in its own timebase) the message was sent::, only when the message was received. Receipt time emphasis::is:: subject to jitter. There is always "measurement error," which may be severe (I observed up to +130 ms inconsistency).
 
 To address this, I use a one-dimensional Kalman filter, assuming a stable value (the difference between two clocks' times in seconds should be constant) with a large measurement error. In practice, the clocks may drift slightly, but we can assume that any drift will be relatively slow ("process noise" in Kalman filter terms). Apart from this drift, one second on one machine should be one second on the other, so, if there is no network timing jitter, code::SystemClock.seconds - timestamp:: will be constant (or extremely slowly changing).
 
-At the same time, the slave periodically sends "ping" messages to the master, to estimate the one-way network latency (another Kalman filter). We assume network latency is some kind of random distribution, always positive, that applies consistently to all messages. Therefore, the difference between clock times will be biased slightly more positive than it should be, by an amount roughly equal to the network delay estimated by pinging. So, the sync method subtracts the one-way network delay.
+At the same time, the follower periodically sends "ping" messages to the lead, to estimate the one-way network latency (another Kalman filter). We assume network latency is some kind of random distribution, always positive, that applies consistently to all messages. Therefore, the difference between clock times will be biased slightly more positive than it should be, by an amount roughly equal to the network delay estimated by pinging. So, the sync method subtracts the one-way network delay.
 
-So we have 1/ stable timestamps and 2/ a relationship between remote and local time that is stabilized by Kalman filters. I have tested up to +150 ms random timing offsets and found that the slave clock performs acceptably for musical content. If network jitter can be reduced, it can perform even better.
+So we have 1/ stable timestamps and 2/ a relationship between remote and local time that is stabilized by Kalman filters. I have tested up to +150 ms random timing offsets and found that the follower clock performs acceptably for musical content. If network jitter can be reduced, it can perform even better.
