@@ -1,5 +1,5 @@
 /**
-    ddwOSCSyncClocks: Simple, minimalistic master-slave clock sync across the network
+    ddwOSCSyncClocks: Simple, minimalistic leader-follow clock sync across the network
     Copyright (C) 2019  Henry James Harkins
 
     This program is free software: you can redistribute it and/or modify
@@ -16,7 +16,7 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 **/
 
-DDWMasterClock : TempoClock {
+DDWLeadClock : TempoClock {
 	classvar pingResp;
 
 	var <>id,
@@ -36,7 +36,7 @@ DDWMasterClock : TempoClock {
 		{
 			tempoResp = OSCFunc({ |msg|
 				this.tempo = msg[2];
-			}, '/ddwSlaveClockTempo_', argTemplate: [id]);
+			}, '/ddwFollowClockTempo_', argTemplate: [id]);
 		}.defer(0);
 		ShutDown.add(this);
 	}
@@ -45,7 +45,7 @@ DDWMasterClock : TempoClock {
 	stop {
 		tempoResp.free;
 		this.stopAliveThread;
-		addr.sendMsg('/ddwMasterStopped', id);
+		addr.sendMsg('/ddwLeadStopped', id);
 		ShutDown.remove(this);
 		super.stop;
 	}
@@ -63,7 +63,7 @@ DDWMasterClock : TempoClock {
 
 	prSendSync { // |test = 0|
 		// msg[2] should be the beats in the future, after 'latency' seconds
-		// simplifies slaveclock's calculation
+		// simplifies followclock's calculation
 		addr.sendBundle(latency,
 			['/ddwClock', id, this.beats + (latency * this.tempo), latency, this.tempo, SystemClock.seconds /*- test*/]);
 	}
@@ -103,15 +103,18 @@ DDWMasterClock : TempoClock {
 	}
 }
 
-DDWSlaveClock : TempoClock {
+DDWFollowClock : TempoClock {
 	var <>bias = 0, <latency, <netDelay = 0, <diff, <addr, <>id;
 	var clockResp, meterResp, stopResp;
 	// Kalman variables
 	var uncertainty, kGain,
 	<>clockDriftFactor = 0.00001,  // "process noise" in Kalman literature
-	<>measurementError = 0.003;  // "measurement uncertainty"
+	<>measurementError = 0.03;  // "measurement uncertainty"
 	var pingThread, pingResp, postPingWarning = true;
 	var <>debugInstability = 0, <>debug = false;
+
+	// testing
+	var <lastReceivedSecs, <lastMessage;
 
 	// tempo, beats, seconds retained for compatibility, but they are overwritten
 	*new { |tempo, beats, seconds, queueSize = 256, id|
@@ -132,15 +135,15 @@ DDWSlaveClock : TempoClock {
 			Error("Tempo % should be a number".format(newTempo)).throw;
 		};
 		if(addr.notNil) {
-			addr.sendMsg('/ddwSlaveClockTempo_', id, newTempo.asFloat);
+			addr.sendMsg('/ddwFollowClockTempo_', id, newTempo.asFloat);
 		};
 		super.tempo = newTempo;
 	}
 	beatsPerBar_ {
-		Error("DDWSlaveClock cannot set beatsPerBar directly (id = %)".format(id)).throw;
+		Error("DDWFollowClock cannot set beatsPerBar directly (id = %)".format(id)).throw;
 	}
 	beats_ {
-		Error("DDWSlaveClock cannot set beats directly (id = %)".format(id)).throw;
+		Error("DDWFollowClock cannot set beats directly (id = %)".format(id)).throw;
 	}
 
 	makeResponder { |argId|
@@ -149,21 +152,21 @@ DDWSlaveClock : TempoClock {
 		argTemplate = if(id.notNil) { [id] } { nil };
 		stopResp.free;
 		stopResp = OSCFunc({ |msg|
-			"Master clock ID % stopped. DDWSlaveClock is now free-running.".format(id).warn;
+			"Master clock ID % stopped. DDWFollowClock is now free-running.".format(id).warn;
 			postPingWarning = false;
-			this.changed(\ddwSlaveClockUnsynced);
-		}, '/ddwMasterStopped', argTemplate: argTemplate);
+			this.changed(\ddwFollowClockUnsynced);
+		}, '/ddwLeadStopped', argTemplate: argTemplate);
 		meterResp.free;
 		meterResp = OSCFunc({ |msg|
 			this.setMeterAtBeat(msg[2], msg[3]);
 		}, '/ddwClockMeter', argTemplate: argTemplate);
 		clockResp.free;
 		case
-		// default setup: one master, slave doesn't specify ID
+		// default setup: one master, follower doesn't specify ID
 		// first tick message from the master should set the ID
 		{ id.isNil or: { addr.isNil } } {
 			clockResp = OSCFunc({ |msg, time, argAddr|
-				"DDWSlaveClock syncing to id % at NetAddr(%, %)\n".postf(msg[1], argAddr.ip, argAddr.port);
+				"DDWFollowClock syncing to id % at NetAddr(%, %)\n".postf(msg[1], argAddr.ip, argAddr.port);
 				addr = argAddr;
 				this.startAliveThread;
 				this.makeResponder(msg[1]);
@@ -172,14 +175,15 @@ DDWSlaveClock : TempoClock {
 		{
 			test = Routine { |time|
 				// at first, 'diff' hasn't been calculated
-				// if the slave's SystemClock is later than the master's,
-				// the slave never initializes and ignores all sync messages
+				// if the follower's SystemClock is later than the master's,
+				// the follower never initializes and ignores all sync messages
 				// so, guarantee at least 30 cycles of the Kalman filter
 				30.do { time = true.yield };
-				this.changed(\ddwSlaveClockSynced, id);
-				"DDWSlaveClock(%) synced\n".postf(id);
+				this.changed(\ddwFollowClockSynced, id);
+				"DDWFollowClock(%) synced\n".postf(id);
 				loop {
-					time = (SystemClock.seconds absdif: (time + diff - netDelay - bias) < latency).yield
+					// "< 0.1" - was 'latency', but 100 ms late is already too much
+					time = (SystemClock.seconds absdif: (time + diff - netDelay) < 0.1).yield
 				};
 			};
 			kalman = this.makeKalman;
@@ -194,23 +198,20 @@ DDWSlaveClock : TempoClock {
 				if(test.next(time)) {
 					diff = kalman.next(value);
 					if(debug) {
-						[SystemClock.seconds, time + diff - netDelay - bias /*- msg[3]*/, time, value, diff].debug("DDWSlaveClock(%)".format(id));
+						[SystemClock.seconds, time + diff - netDelay - bias /*- msg[3]*/, time, value, diff].debug("DDWFollowClock(%)".format(id));
 					};
 					this.prSync(msg, time);
 					postPingWarning = true;
 					if(waiting) {
 						// should not send this until after the first prSync
-						this.changed(\ddwSlaveClockId, id);
+						this.changed(\ddwFollowClockId, id);
 						waiting = false;
 					};
 					recovery = nil;  // one on-time message cancels backup filter
 				} {
-					msg.debug(
-						"DDWSlaveClock(%): message arrived late; local SystemClock = %; remote time = %; remote time adjusted = %".format(id, SystemClock.seconds, time, time + diff - netDelay - bias + latency)
-					);
 					// so this is a kind of insane thing I have to do here.
 					// Messages can be late for 2 reasons:
-					// 1. The slave machine's interpreter is blocked for a few seconds
+					// 1. The follower machine's interpreter is blocked for a few seconds
 					//    (MIDI init, building huge synthdefs, etc.)
 					// 2. Or, one or the other timebase shifted and the old 'diff' is invalid.
 					//    (Obviously this should never happen, but I've seen it, repeatedly.)
@@ -218,8 +219,13 @@ DDWSlaveClock : TempoClock {
 					// normal behavior once the delay is cleared.
 					// For #2, we should wait until we're sure it isn't going to recover,
 					// and then switch to a new timebase (replace 'diff' and 'kalman').
-					// #2 IS NEVER SUPPOSED TO HAPPEN but it happens a lot when Windows is involved.
+					// #2 IS NEVER SUPPOSED TO HAPPEN but it does when Linux is receiving.
 					if(recovery.isNil) {
+						if(debug == true) {
+							"\nSTARTING RECOVERY:\nlast seconds = %\nlast message = %\n".postf(
+								lastReceivedSecs, lastMessage
+							);
+						};
 						recovery = Routine { |inval|
 							var kalman2 = this.makeKalman, backupDiff,
 							start = SystemClock.seconds;
@@ -235,8 +241,15 @@ DDWSlaveClock : TempoClock {
 							recovery = nil;
 						};
 					};
-					[diff, recovery.next(value)].debug("recalibrating [old, new diff]");
+					if(debug == true) {
+						msg.debug(
+							"DDWFollowClock(%): message arrived late; local SystemClock = %; remote time = %; remote time adjusted = %".format(id, SystemClock.seconds, time, time + diff - netDelay - bias + latency)
+						);
+						[diff, recovery.next(value)].debug("recalibrating [old, new diff]");
+					};
 				};
+				lastReceivedSecs = SystemClock.seconds;
+				lastMessage = msg;
 			}, '/ddwClock', argTemplate: argTemplate);
 		}
 	}
@@ -270,7 +283,7 @@ DDWSlaveClock : TempoClock {
 			// if the ping reply doesn't come back in 2 seconds, something is wrong
 			AppClock.sched(2.0, {
 				if(postPingWarning and: { count == currentCount and: { this.isRunning } }) {
-					"DDWSlaveClock(%): Ping at count % timed out after 2 seconds"
+					"DDWFollowClock(%): Ping at count % timed out after 2 seconds"
 					.format(id, count).warn;
 					cond.unhang;
 				};
@@ -286,7 +299,7 @@ DDWSlaveClock : TempoClock {
 					count = count + 1;
 					netDelay = kalman.next(delta);
 					if(debug) {
-						[count, delta, netDelay].debug("DDWSlaveClock(%) ping".format(id));
+						[count, delta, netDelay].debug("DDWFollowClock(%) ping".format(id));
 					};
 					cond.unhang;
 				};
