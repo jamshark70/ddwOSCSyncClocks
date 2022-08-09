@@ -147,7 +147,7 @@ DDWFollowClock : TempoClock {
 	}
 
 	makeResponder { |argId|
-		var argTemplate, value, waiting = true, test, kalman, recovery;
+		var argTemplate, value, waiting = true, test, kalman, recovery, recoveryValue;
 		id = argId;
 		argTemplate = if(id.notNil) { [id] } { nil };
 		stopResp.free;
@@ -241,11 +241,12 @@ DDWFollowClock : TempoClock {
 							recovery = nil;
 						};
 					};
+					recoveryValue = recovery.next(value);
 					if(debug == true) {
 						msg.debug(
 							"DDWFollowClock(%): message arrived late; local SystemClock = %; remote time = %; remote time adjusted = %".format(id, SystemClock.seconds, time, time + diff - netDelay - bias + latency)
 						);
-						[diff, recovery.next(value)].debug("recalibrating [old, new diff]");
+						[diff, recoveryValue].debug("recalibrating [old, new diff]");
 					};
 				};
 				lastReceivedSecs = SystemClock.seconds;
