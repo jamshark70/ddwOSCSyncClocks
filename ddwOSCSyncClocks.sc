@@ -65,7 +65,7 @@ DDWLeadClock : TempoClock {
 		// msg[2] should be the beats in the future, after 'latency' seconds
 		// simplifies followclock's calculation
 		addr.sendBundle(latency,
-			['/ddwClock', id, this.beats + (latency * this.tempo), latency, this.tempo, SystemClock.seconds /*- test*/]);
+			['/ddwClock', id, this.beats + (latency * this.tempo), latency, this.tempo, SystemClock.seconds /*- test*/, this.beatsPerBar, this.baseBarBeat]);
 	}
 
 	startAliveThread {
@@ -188,6 +188,12 @@ DDWFollowClock : TempoClock {
 			};
 			kalman = this.makeKalman;
 			clockResp = OSCFunc({ |msg, time, argAddr|
+				if(this.beatsPerBar != msg[6] or: { this.baseBarBeat != msg[7] }) {
+					[this.beatsPerBar, msg[6], this.baseBarBeat, msg[7]]
+					.debug("old meter, new meter, old basebar, new basebar");
+					this.setMeterAtBeat(msg[6], msg[7]);
+				};
+
 				latency = msg[3];
 				time = msg[5];  // SystemClock.seconds from master
 				// if something blocks the language for awhile, e.g. MIDI init,
